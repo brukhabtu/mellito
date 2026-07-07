@@ -161,3 +161,36 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   verify) → 6/6 determinism per task → stage ≥15 holdout-destined
   (own-repo/post-cutoff only) for the operator to move. Holdout population is
   operator-gated by design (curator item 4 + the hook).
+
+## 2026-07-07 · P1 Corpus · run (determinism harness built + validated)
+- unit: the 3+3 determinism admission check (corpus-curator item 2), as
+  reusable infra `infra/determinism_check.py` — Docker-based, source-agnostic
+  (SWE-bench/R2E-Gym/SWE-Gym/own-repo all express broken vs solution states as
+  shell steps in a JSON descriptor), binary offline verdict path, `--network
+  none` during verify.
+- pinned criteria & results:
+  1. admits a hermetic task (broken fails 3/3, solution passes 3/3) — **PASS**
+     (`infra/tests/determinism_selftest.json` → `6/6`, admissible, exit 0).
+  2. rejects a non-hermetic task (broken state doesn't fail) — **PASS**
+     (negative self-test → `3/6`, admissible=false, exit 1).
+  3. identical-base guarantee: solution state is built from a snapshot of the
+     post-setup base, so it differs from broken only by the gold fix — **PASS**
+     (implemented via `docker commit` of the base, re-used for both states).
+  4. self-test fixtures live in `infra/tests/`, NOT `tasks/dev/` — **PASS**
+     (no corpus-count inflation; status.py dev count still 0).
+- environment recon: Docker daemon started locally (v29.3.1, overlayfs, root);
+  usable disk ~30 GiB (quota-limited); the standard SWE-bench prebuilt eval
+  image for sampled SWE-Gym instances (e.g. getmoto__moto-7365) is **absent**
+  on Docker Hub — SWE-Gym imports need SWE-Gym's own image-build harness, not a
+  prebuilt pull.
+- verdict: G2 **not closeable this session** — the machinery is ready, but
+  admitting real tasks is gated on three operator-side inputs, none a code fix:
+  (a) dev sourcing given no prebuilt images (build SWE-Gym env images — heavy,
+  disk-bound at 30 GiB — vs run determinism on Modal vs own-repo tasks);
+  (b) own-repo access (simstim/Kerf not in this session — need add_repo);
+  (c) holdout population (own-repo/post-cutoff only; I stage, operator moves).
+  Recorded as the current frontier state; awaiting operator direction rather
+  than thrashing a blind 40-image build or inflating the count with non-admitted
+  tasks (integrity: numbers/tasks must be real).
+- decision-rule states this cycle: MDD n/a · dev/holdout gap n/a (G4 only) ·
+  kill criterion n/a (no cost/pass data yet).
