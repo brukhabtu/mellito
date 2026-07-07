@@ -57,7 +57,9 @@ findings/FINDINGS.md. Summary of where the project stands:
   adversarially reviewed (10 confirmed bugs fixed), and validated end-to-end: a
   proof-of-one PASS (Ornith solved django-10973 with a real source fix, 27
   turns) and a clean 3×3 mini-sweep (0 invalid across django/pylint/astropy).
-  The full 40×5 **Ornith v001 baseline** is running.
+  The full 40×5 **Ornith v001 baseline** is DONE (run `20260707T215242-v001-baseline`):
+  **20/40 dev tasks solved = 50%** (CI [35, 65]), $0.086/solved, 1 invalid/200.
+  This is the reference every scaffold variant pairs against.
 - **G4–G6 — not started.**
 
 ### Sequencing decision (2026-07-08, operator-directed)

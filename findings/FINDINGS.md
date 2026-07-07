@@ -616,3 +616,35 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   (per_task, by_provenance, cost, paired_vs_parent).
 - gate C3 (≤1 invalid of 9) PASSED with 0. Cleared to run the full 40×5 Ornith
   baseline.
+
+## 2026-07-08 · P2 Measurement · run (G3 Ornith v001 baseline — the reference)
+- variant: v001-baseline (parent none) — hypothesis: "base Ornith-35B in stock
+  Claude Code, minimal worker CLAUDE.md, full self-direction; the reference all
+  mutations pair against."
+- run: `20260707T215242-v001-baseline` · 40 dev tasks · 5 trials (200 trials)
+- result: **task-level 20/40 solved = 50% (95% CI [35.2, 64.8])**; per-trial
+  93 pass / 106 fail / 1 invalid. $/solved: **$0.086** (gpu, tokens-attributed);
+  s/task: 232 mean wall; tokens_out 1.42M.
+- by provenance: public-pretrained 50% (the only class in dev — all 40 tasks).
+- per-task passes/5 distribution: 0×11 · 1×6 · 2×3 · 3×6 · 4×7 · 5×7. Bimodal
+  with heavy middle variance — 9 tasks at 1–2/5 are the likeliest to flip under
+  a better scaffold; 11 at 0/5 are the hard frontier; 7 at 5/5 are locked.
+- robustness: **1 invalid / 200 (0.5%)** — django-13023 trial 2,
+  worker_reported_error (CLI self-reported error, transient). The other 39 tasks
+  had 0 invalid. The Error≠fail path worked (excluded, not scored fail).
+- cost attribution (both recorded in summary.cost.gpu_attribution): summary
+  gpu_seconds 1567.5 / $1.72 = Σ(tokens_out/908) (decode-attributed); ledger row
+  2116 s / $2.32 = max(Σ, sweep-wall) = the wall the shared H100 stayed warm
+  across the 35-min sweep — the actual-bill upper bound the budget hook reads.
+  Not a discrepancy; the two answer different questions ($/solved vs $ spent).
+- verdict: **baseline reference** (no keep/reject — this IS the parent). It is
+  the number every scaffold variant pairs against, and the number Haiku 4.5 is
+  measured against later (deferred to pre-G6 per the sequencing decision).
+- gate: G3 Ornith baseline complete (ledger has real entries + this baseline
+  entry). Haiku/Sonnet columns deferred. NOTE: status.py frontier still reads
+  G2 because holdout is 0/15 (operator move pending) — but holdout only bites at
+  the FINAL G4 gate; the P3 scaffold search runs entirely on dev and is
+  unblocked.
+- decision-rule states: MDD n/a (no variant comparison yet — this is the
+  parent) · dev/holdout gap n/a (G4 only) · kill criterion n/a (Haiku not yet
+  measured).
