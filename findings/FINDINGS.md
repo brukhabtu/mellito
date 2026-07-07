@@ -271,3 +271,38 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   `tasks/holdout/` (guard-holdout.py blocks me by design). No holdout tasks
   fabricated; no public-pretrained task mislabelled as post-cutoff.
 - decision-rule states this cycle: MDD n/a · dev/holdout gap n/a · kill n/a.
+
+## 2026-07-07 · P1 Corpus · admission (dev rebalanced for repo diversity)
+- operator called the 70% django skew; rebalanced. Dropped 14 django (kept 14),
+  admitted 14 more non-django via the same `batch` path against a non-django
+  candidate pool. Final dev (40): django 14 · scikit-learn 8 · astropy 6 ·
+  pylint 6 · pytest 4 · xarray 2. Max single-repo share now 35% (was 70%).
+  Every task still 6/6; `status.py` G2 dev still PASS (40).
+- same conservative rejects recurred (requests-1142, pylint-4661,
+  sklearn-14053/-14053, astropy-13033/-8707) — whole-file directive scope pulls
+  an offline-flaky/network neighbour test; correct refusals.
+
+## 2026-07-07 · P1 Corpus · incident (no public source yields post-cutoff holdout)
+- operator ruled out own-repo holdout and asked for a **public** holdout
+  source. Researched all
+  public options; **none supplies post-2026-06-25 tasks**:
+  - **SWE-rebench** (`nebius/SWE-rebench`): 21,336 tasks, latest 2025-04-30.
+  - **SWE-bench-Live** (`SWE-bench-Live/SWE-bench-Live`): monthly splits, latest
+    is `202506` (2025-06-20), 50 tasks/month, repos disjoint from dev (mypy,
+    dspy, textual, fastmcp, …). But rows carry **no prebuilt image** (only
+    `test_cmds`/`base_commit`), so tasks need image-building via SWE-bench-Live's
+    harness — not a turnkey pull like SWE-bench Verified.
+  - SWE-bench Verified/Lite: all pre-cutoff public-pretrained (already dev).
+- conclusion: a **genuine post-cutoff public holdout requires mining GitHub PRs
+  merged after 2026-06-25 and building hermetic images ourselves** — no dataset
+  has tasks that fresh. This is a distinct sub-project (env-image build per task,
+  no prebuilts). Two framings for the operator to choose between:
+  (A) **strict** — mine fresh (post-2026-06-25) bugfix PRs from easy-to-build
+      public repos; genuine uncontaminated holdout; heavier, higher build-failure
+      rate.
+  (B) **best-effort** — use SWE-bench-Live `202506` tasks (2025-06, repos
+      disjoint from dev) as a held-out-*repos* proxy; faster (reuse importer once
+      images build) but weaker contamination guarantee — must be logged as such,
+      and the contamination tripwire's meaning weakens.
+- no holdout tasks fabricated; no pre-cutoff task mislabelled post-cutoff.
+  G2 holdout remains 0/15 pending the operator's framing choice.
