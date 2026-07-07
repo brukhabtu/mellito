@@ -572,3 +572,32 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   (rc -1 near deadline from another kill mislabels as timeout); smoke pays one
   extra slim-container start to fetch the endpoint key; legacy summaries
   without the new fields are treated as non-partial ornith.
+
+## 2026-07-07 · P2 Measurement · run (proof-of-one PASS — run_trial validated end-to-end)
+- first real Ornith trial through the full run_trial pipeline (run_one on
+  django__django-10973). Three latent bugs found and fixed live before any
+  batch spend (this is exactly what the proof-of-one is for):
+  1. worker CLI hung with zero output — TWO causes: `claude -p` blocks on an
+     open non-TTY stdin (fix: run under `bash -lc ... < /dev/null`, prompt via
+     WORKER_PROMPT env) and Claude Code refuses `--dangerously-skip-permissions`
+     as root without IS_SANDBOX=1 (added to worker_env). Diagnosed by isolating
+     the exec: egress to the proxy was fine (200s), claude produced no output
+     even to files with --debug → earliest-startup block.
+  2. ContextWindowExceededError on the first agentic call: Claude Code's
+     ~11k-token system prompt + tool schemas plus its window-filling output
+     request overflowed `--max-model-len 32768`. Raised to 131072 (Mamba/GDN
+     hybrid → cheap KV; boots clean, `create kv cache` OK, smoke still 20/20).
+  3. tokens read 0 despite real work: Claude Code zeroes the result-line
+     usage/cost against the unpriced custom endpoint; real counts live per
+     assistant message. parse_stream_json now sums assistant usage.
+  plus: verdict phase now resets the hidden-test files to base before applying
+  them (the worker edited a test file — tests are authoritative, SWE-bench
+  semantics), and a run_sweep path bug (globbed files, _load_spec wants dirs)
+  caught by the mini-sweep.
+- **result (run ap-GpG5oNqo0UibqEF2UVjht7): verdict PASS**, verify_exit_zero,
+  27 turns, 138 s, tokens_in 386,351 / tokens_out 12,010, gpu_seconds 13.2,
+  api_usd 0. Adversarially confirmed legitimate: the worker made a real source
+  fix to `django/db/backends/postgresql/client.py` (its test-file edit was
+  discarded by the reset), so the authoritative hidden test passed on the fix.
+- G3 runner is validated end-to-end. Next: 3×3 mini-sweep, then the full
+  40×5 Ornith baseline.
