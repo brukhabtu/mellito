@@ -432,3 +432,29 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
     lift tok/s enough that trials are minutes not hours.
 - decision-rule states: MDD n/a (no runs) · dev/holdout gap n/a · kill n/a.
 - run ledger: none yet (no GPU-bearing sweep executed — machinery only).
+
+## 2026-07-07 · P2 Throughput · incident (batching gives NO benefit; ~13 tok/s ceiling confirmed)
+- probed the live endpoint's aggregate throughput vs concurrency (to test whether
+  the parallel sweep amortises the ~13 tok/s single-stream latency into higher
+  aggregate throughput — which would make the G3 baseline cheap).
+- result (warm endpoint, 256-tok completions):
+  - concurrency=1: ~13 tok/s (the one 1.1 tok/s reading was cold-boot-inflated).
+  - concurrency=8: **2048 tok in 158s = 13.0 tok/s AGGREGATE** — identical to
+    single-stream. Per-request latencies were **staggered 21s→158s**, not
+    clustered, i.e. requests were served **serially, not batched**.
+- conclusion: the endpoint has a hard ~13 tok/s aggregate ceiling that does NOT
+  scale with concurrency. The continuous-batching hope that would have made the
+  sweep cheap is dead — the earlier ~$342 estimate for a 40×5 Ornith baseline
+  stands (or worse, given no batch amortisation). **G3 baselines are infeasible
+  at the current serve config; P2 throughput tuning is a hard prerequisite.**
+- likely causes to chase in P2 (staggered latencies = serialization):
+  1. `--enforce-eager` (no cudagraph) — per-step overhead dominates; re-enabling
+     compile+cudagraph needs a CUDA toolkit (nvcc) baked into the serve image
+     (the reason it was disabled at G1).
+  2. hybrid GDN/Mamba state batching limits in vLLM 0.24 (check `--max-num-seqs`,
+     `--max-num-batched-tokens`, and whether the scheduler runs >1 seq at once).
+  3. Modal serve container request concurrency (`@modal.concurrent`) — confirm
+     vLLM actually receives the 8 requests simultaneously vs Modal queuing them.
+- no ledger entry (probe only; ~1 H100 cold boot + a few short completions).
+  Endpoint scales down after 120s idle.
+- decision-rule states: MDD n/a · dev/holdout gap n/a · kill n/a (no runs).
