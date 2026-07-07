@@ -1,0 +1,93 @@
+id: aws-cloudformation__cfn-lint-4162
+provenance: held-out-public
+source: "SWE-bench-Live 202506 · aws-cloudformation/cfn-lint · PR#4162 · 2025-06-11"
+image: starryzhang/sweb.eval.x86_64.aws-cloudformation_1776_cfn-lint-4162@sha256:e33c4f2f03121b04722957e26cd39330068d1a400220bec2adbb048586a1552f
+description: |
+  LanguageExtensions mixing values from mapping
+  ### CloudFormation Lint Version
+  
+  cfn-lint 1.35.4
+  
+  ### What operating system are you using?
+  
+  Mac,Linux
+  
+  ### Describe the bug
+  
+  When evaluating a CloudFormation template using cfn-lint with the LanguageExtensions transform enabled, we encounter the following error:
+  
+  ```
+  E3690; Resources.DBCluster.Properties.EngineVersion; '8.0.mysql_aurora.3.07.0' is not one of ['11', '11.21', '11.9', '12', '12.22', '12.9', '13', '13.11', 
+  '13.12', '13.13', '13.14', '13.15', '13.16', '13.18', '13.20', '13.9', '14', '14.10', '14.11', '14.12', '14.13', '14.15', '14.17', '14.6', '14.8', '14.9', 
+  '15', '15.10', '15.12', '15.3', '15.4', '15.5', '15.6', '15.7', '15.8', '16', '16.1', '16.2', '16.3', '16.4', '16.4-limitless', '16.6', '16.6-limitless', 
+  '16.8', '16.8-limitless', '17', '17.4']
+  ````
+  
+  It seems that in the evaluation it is picking the mysql_aurora option as the EngineVersion, but it is comparing it to the versions available for the aurora-postgresql Engine. The error occurs only when the EngineMap includes both aurora-mysql and aurora-postgresql options, and the LanguageExtensions transform is enabled. When removing one of the options from the map or disabling the LanguageExtensions transform, the template passes validation correctly.
+  
+  ```yaml
+          EngineMap:
+            8.0.mysql-aurora.3.07.0:
+              Engine: 'aurora-mysql'
+              EngineVersion: '8.0.mysql_aurora.3.07.0'
+            aurora-postgresql-15.10:
+              Engine: 'aurora-postgresql'
+              EngineVersion: '15.10'
+  ```
+  
+  ### Expected behavior
+  
+  Given the Engine aurora-mysql value, 8.0.mysql_aurora.3.07.0 should be a valid value for the EngineVersion.
+  
+  ```yaml
+        Engine: !FindInMap [ EngineMap, !Ref Engine, Engine ]
+        EngineVersion: !FindInMap [ EngineMap, !Ref Engine, EngineVersion ]
+  ```
+  
+  ### Reproduction template
+  
+  ```yaml
+  AWSTemplateFormatVersion: "2010-09-09"
+  Description: test-db.yml
+  
+  Parameters:
+    Engine:
+      Description: 'DB Engine version.'
+      Type: String
+      Default: '8.0.mysql-aurora.3.07.0'
+      AllowedValues:
+        - "8.0.mysql-aurora.3.07.0"
+        - "aurora-postgresql-15.10"
+  
+  Mappings:
+    EngineMap:
+      8.0.mysql-aurora.3.07.0:
+        Engine: 'aurora-mysql'
+        EngineVersion: '8.0.mysql_aurora.3.07.0'
+      aurora-postgresql-15.10:
+        Engine: 'aurora-postgresql'
+        EngineVersion: '15.10'
+  
+  Transform: AWS::LanguageExtensions
+  
+  Resources:
+    DBCluster:
+      Type: "AWS::RDS::DBCluster"
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        DBClusterIdentifier: database
+        DeletionProtection : true
+        Engine: !FindInMap [ EngineMap, !Ref Engine, Engine ]
+        DatabaseName: "master_test_dbname"
+        EngineVersion: !FindInMap [ EngineMap, !Ref Engine, EngineVersion ]
+        MasterUsername: "master_test_user"
+        MasterUserPassword: '{{resolve:secretsmanager:test-secret:SecretString:database_master_password}}'
+  ```
+verify: "cd /testbed && pytest -rA 'test/unit/module/template/transforms/test_language_extensions.py::TestTransformValueIsStringInMap::test_transform'"
+timeout_s: 1800
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

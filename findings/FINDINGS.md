@@ -306,3 +306,38 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
       and the contamination tripwire's meaning weakens.
 - no holdout tasks fabricated; no pre-cutoff task mislabelled post-cutoff.
   G2 holdout remains 0/15 pending the operator's framing choice.
+
+## 2026-07-07 · P1 Corpus · admission (holdout staged — 18 best-effort tasks; operator move pending)
+- operator chose the **best-effort** holdout framing (SWE-bench-Live 2025-06).
+  Discovery that made it tractable: SWE-bench-Live ships prebuilt per-instance
+  images under the **`starryzhang/sweb.eval.x86_64.<id>`** namespace (repo at
+  `/testbed`, system python, no conda) — same pull-and-check pipeline as dev,
+  no image build needed. (The dataset parquet's image fields are null; the
+  naming is deterministic.)
+- machinery: `infra/import_swebench_live.py` (`descriptor`|`batch`|`list`).
+  Verify is built from each row's `test_cmds` (all `log_parser=pytest`): keep the
+  env wrapper (uv/poetry/`python -m`/PYTHONPATH) but run exactly the
+  FAIL_TO_PASS node ids with `-rA`, exit 0 = pass. Excludes any repo present in
+  dev (disjoint-repos invariant). Writes to `tasks/staging/` only.
+- result: **18 tasks staged, every one 6/6**, across 15 distinct repos (agentops,
+  litellm, aider, textual, praisonai, pyomo, cfn-lint, aiogram, beets, briefcase,
+  powertools-lambda, django-celery-beat, checkov, certbot ×2, conan ×2) — none
+  overlapping the dev repos. Dates 2025-04…2025-06. 1 reject (textual-5823, 3/6,
+  offline-flaky neighbour). Reproducibility re-checked on agentops-1002 from its
+  **pinned digest** → 6/6.
+- provenance: labelled **`held-out-public`** (new, documented in tasks/schema.md
+  + .claude/rules/tasks.md): public repos disjoint from dev, ~2025-06, NOT strict
+  post-cutoff. Honest about the weaker contamination guarantee — a dev/holdout
+  gap here is a **generalization** signal (unseen repos), not a clean
+  contamination verdict. This is the operator-approved deviation from
+  "holdout = own-repo/post-cutoff".
+- **operator action required to close G2 holdout:** move ≥15 of the 18 staged
+  specs from `tasks/staging/` into `tasks/holdout/` (I cannot — guard-holdout.py
+  blocks writes there by design; that block is correct). After the move,
+  `status.py` G2 holdout flips to PASS and the frontier advances to G3.
+- caveat carried forward to G3/G4: baseline + search results must be sliced
+  public-pretrained (dev) vs held-out-public (holdout); the contamination
+  tripwire's strength is reduced accordingly. If a genuine post-cutoff holdout
+  is wanted later, the fresh-PR-mining route (strict option) remains open.
+- decision-rule states this cycle: MDD n/a · dev/holdout gap n/a (G4 only) ·
+  kill criterion n/a (no cost/pass data yet).
