@@ -53,6 +53,13 @@ vllm_image = (
     scaledown_window=120,  # warm containers bill; keep this short
     timeout=60 * MINUTES,
 )
+# Let ONE container serve many requests at once. Without this, Modal routes a
+# single request per container to the web server, so vLLM's continuous batcher
+# never sees a queue (measured: 8 concurrent clients -> "Running: 1 reqs" in the
+# engine, ~13 tok/s aggregate = single-stream). With concurrent inputs, vLLM
+# batches across the fleet of trials, multiplying aggregate throughput on the
+# one H100 — the lever that makes a G3 sweep affordable.
+@modal.concurrent(max_inputs=64)
 # First boot downloads ~35GB of FP8 shards into the volume before vLLM can
 # bind :8000; subsequent boots hit the cached volume (~1-2 min). Give the
 # startup probe room for the cold pull.

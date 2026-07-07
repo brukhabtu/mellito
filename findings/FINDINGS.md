@@ -458,3 +458,22 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
 - no ledger entry (probe only; ~1 H100 cold boot + a few short completions).
   Endpoint scales down after 120s idle.
 - decision-rule states: MDD n/a · dev/holdout gap n/a · kill n/a (no runs).
+
+## 2026-07-07 · P2 Throughput · run (Modal concurrency fix: 13 -> 28 tok/s aggregate)
+- root cause of the flat ~13 tok/s: the serve `@modal.web_server` had no
+  concurrent-input setting, so Modal routed ONE request per container at a time
+  — vLLM's engine logs showed `Running: 1 reqs, Waiting: 0` throughout an
+  8-client probe. vLLM's continuous batcher never saw a queue. NOT a model limit.
+- fix: added `@modal.concurrent(max_inputs=64)` to `serve()` (vLLM command
+  unchanged), redeployed.
+- re-probe (warm): c=1 15.6 tok/s · **c=8 28.0 tok/s aggregate** (was 13.0) — a
+  2× lift from real batching. Per-request latencies still staggered (16–73s), so
+  batching is partial, not the full 8× — more P2 headroom remains (candidates:
+  raise `--max-num-seqs`, drop `--enforce-eager` for cudagraph, check hybrid
+  GDN/Mamba batch limits, push max_inputs/target_inputs).
+- cost impact: roughly halves the earlier estimate — a 40×5 Ornith baseline
+  ~$170 at 28 tok/s (still near the $150 cap; further tuning or a reduced first
+  baseline needed). Iteration latency also halved.
+- G1 unaffected by design (serve command identical); a smoke re-confirm is
+  advisable before relying on it.
+- decision-rule states: MDD n/a · dev/holdout gap n/a · kill n/a.
