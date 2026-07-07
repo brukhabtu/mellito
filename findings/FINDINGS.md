@@ -503,3 +503,28 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   finished in ~90s vs ~10 min under eager. Compiled greedy output is identical.
 - @modal.concurrent(max_inputs=64) from the prior fix is retained and is what
   lets the fleet's requests reach the engine together.
+
+## 2026-07-07 · P2 Validation · run (independent validation pass over the PR #2 merge)
+- goal (approved plan, Phase A): validate the merged corpus + machinery before
+  any paid run. Executor split per operator: Fable ran/adjudicated; a Sonnet
+  subagent authored the mechanical tooling.
+- results, per pinned criterion:
+  1. **smoke re-gate PASS** — 20/20 trivials, 0 think-leaks, schema-clean tool
+     call on the compiled config (run `ap-ne7YzYVrAaUKSvjAvlmFiw`).
+  2. **corpus audit PASS** — new `infra/audit_tasks.py` (58 specs: 40 dev + 18
+     staging; holdout never read): required fields, id/dir match, split-legal
+     provenance, digest-pinned images, hidden-tests present + diff-shaped,
+     timeout bounds, verify non-empty → **0 failures**.
+  3. **oracle-leak adjudication** — the audit's strict substring check first
+     flagged 9 tasks; inspection showed all were *repro-snippet overlap*
+     (SWE-bench builds its tests from the issue's own repro, so imports/repro
+     lines appear in both — issue→test direction, no fix/verdict revealed).
+     Hard-FAIL now reserved for hidden-test *names* (`def test_…`) in the
+     description → **0 real leaks**; the 9 downgraded to WARNs, logged.
+  4. **determinism re-verified from pinned digests** — django__django-10973 and
+     pylint-dev__pylint-6386 both **6/6** (fresh dockerd, images re-pulled by
+     digest). Corpus remains reproducible downstream.
+  5. **stats tests formalized** — `infra/tests/test_sweep_stats.py`, 18 pytest
+     cases over per_task/paired/provenance/cost/summary/ledger — **18 passed**.
+- code-review of the run_trial/run_sweep surface happens with the Phase B diff
+  (one review covers both) before the first paid trial.
