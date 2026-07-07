@@ -22,4 +22,37 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
 
 ---
 
-(no entries yet)
+## 2026-07-07 · P0 Serving · incident (BLOCKED)
+- goal: advance frontier gate **G1 Serving** — `modal run infra/modal_app.py::smoke`
+  exits 0 (schema-clean tool calls, no `<think>` leakage, 20/20 trivials).
+- frontier evidence: `python3 infra/status.py` reports `Frontier: G1`; G1 line
+  `[----] smoke suite exits 0  (modal CLI missing)`.
+- G1 decomposition (goal skill) and per-criterion status:
+  - **U1 Modal account + auth** — criterion: `modal token` resolves a valid
+    account. RESULT: unsatisfiable. No `modal` CLI, no `modal` Python package,
+    no `~/.modal.toml`, no `~/.config/modal`, no `MODAL_TOKEN_*` in env.
+  - **U2 Gated HF weights access** — criterion: `deepreinforce-ai/Ornith-1.0-35B-FP8`
+    is pullable. RESULT: unsatisfiable. Model is gated; no HF token/cache present.
+  - **U3 vLLM endpoint deployed** (`modal deploy`, H100, patched chat template).
+    RESULT: unreachable — depends on U1+U2; also GPU-spend-bearing under the
+    $150 cap in infra/budget.yaml.
+  - **U4 smoke() body implemented** — currently `raise SystemExit("smoke: not
+    implemented (Phase 0)")`. RESULT: implementable in-repo, but **moot**: even a
+    complete smoke suite cannot exit 0 without a live endpoint (U1–U3). Writing
+    it now would ship serving code that cannot be exercised → an unverified
+    number, which experiment-integrity forbids. Deferred until the serving
+    stack is authenticatable.
+- verdict: **BLOCKED — stop condition (c): missing credentials/accounts (Modal
+  auth, HF weights access).** Binding constraint is U1 (and U2). This is the
+  expected first block per the milestone plan.
+- action: no workflow fleet dispatched — every worker's first mechanical step
+  (`modal token` / `modal deploy`) would fail identically; a fan-out here is
+  thrash, not progress. No credentials fabricated or injected; no guard hook
+  routed around.
+- unblock path (operator): provide a Modal account (`modal token new` or
+  `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` as a Modal secret / env), accept the
+  Ornith-1.0-35B-FP8 license and provide an `HF_TOKEN`, then re-run
+  `infra/status.py`. Frontier advances to U3→U4 (implement + deploy) once auth
+  resolves.
+- decision-rule states this cycle: MDD n/a (no runs) · dev/holdout gap n/a
+  (G4 only) · kill criterion n/a (no cost/pass data yet).
