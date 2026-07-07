@@ -73,3 +73,18 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   license on Hugging Face and provide an `HF_TOKEN`; it will be wired as a
   Modal secret (`modal secret create huggingface HF_TOKEN=...`), never
   committed. Then: implement U4, `modal deploy`, re-run status.py.
+
+## 2026-07-07 · P0 Serving · incident (surprise — U2 was not a blocker)
+- surprise (logged per experiment-integrity before acting): the weights model
+  `deepreinforce-ai/Ornith-1.0-35B-FP8` is **public, not gated**. Evidence:
+  `GET https://huggingface.co/api/models/deepreinforce-ai/Ornith-1.0-35B-FP8`
+  returns HTTP 200 unauthenticated with `gated:false, private:false`. Operator
+  reported the model page shows no license/access prompt — consistent.
+- correction: the prior two entries treated U2 (gated HF access) as the binding
+  blocker. It is not. No license acceptance is required; weights download
+  anonymously. An `HF_TOKEN` remains optional (rate-limit insurance for the
+  ~35GB pull inside Modal), not a gate.
+- net G1 unit status: **U1 Modal auth RESOLVED · U2 weights access N/A (public)**.
+  Remaining is pure implementation: U4 (smoke body) + U3 (`modal deploy`,
+  H100 GPU spend under the $150 cap; ledger currently empty). G1 is now
+  actionable, no missing credentials.
