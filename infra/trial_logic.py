@@ -152,6 +152,11 @@ def worker_env(worker: dict, extra: dict | None = None) -> dict:
         "ANTHROPIC_MODEL": worker["model"],
         "ANTHROPIC_SMALL_FAST_MODEL": worker.get("small_model") or worker["model"],
         "ANTHROPIC_API_KEY": worker.get("api_key") or "missing-key",
+        # Claude Code refuses --dangerously-skip-permissions as root (the task
+        # sandbox runs as root) unless IS_SANDBOX=1 — without it the CLI hangs
+        # before emitting any output. The worker exec also feeds stdin from
+        # /dev/null; an open non-TTY stdin is the other half of that hang.
+        "IS_SANDBOX": "1",
         "DISABLE_AUTOUPDATER": "1",
         "DISABLE_TELEMETRY": "1",
         "DISABLE_ERROR_REPORTING": "1",

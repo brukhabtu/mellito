@@ -93,9 +93,13 @@ def serve():
         "vllm", "serve", MODEL,
         "--download-dir", "/weights",
         "--served-model-name", "ornith-35b",
-        # Conservative for the G1 first boot on a single H100; raise once KV
-        # headroom is measured (model supports up to 262144).
-        "--max-model-len", "32768",
+        # 128k window. Claude Code's system prompt + tool schemas are ~11k
+        # tokens before any task context, and it sizes its output request to
+        # fill the window — 32k overflowed on the very first agentic call
+        # (ContextWindowExceededError). Ornith is a Mamba/GDN hybrid, so only
+        # the few full-attention layers grow KV with length; a large window is
+        # cheap here (model supports up to 262144). Drop if boot KV OOMs.
+        "--max-model-len", "131072",
         "--gpu-memory-utilization", "0.92",
         "--enable-auto-tool-choice",
         "--tool-call-parser", "qwen3_xml",
@@ -549,11 +553,18 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             # not from a (never-raised) ExecTimeoutError. Keep a UnicodeDecodeError
             # guard as cheap insurance against odd bytes in the text stream.
             exec_start = time.time()
+            # Run claude under bash with stdin from /dev/null: an open non-TTY
+            # stdin makes `claude -p` block forever before any output. The prompt
+            # goes through an env var (WORKER_PROMPT), never the shell command
+            # string, so the arbitrary issue text can't break quoting. `exec`
+            # replaces bash so signals/exit flow straight to the CLI.
             proc = sb.exec(
-                "claude", "-p", description,
-                "--output-format", "stream-json", "--verbose",
-                "--dangerously-skip-permissions", "--max-turns", "150",
-                env=exec_env, timeout=timeout_s, workdir="/testbed")
+                "bash", "-lc",
+                'exec claude -p "$WORKER_PROMPT" --output-format stream-json '
+                "--verbose --dangerously-skip-permissions --max-turns 150 "
+                "< /dev/null",
+                env={**exec_env, "WORKER_PROMPT": description},
+                timeout=timeout_s, workdir="/testbed")
             with open(transcript_path, "w") as tfp:
                 try:
                     for chunk in proc.stdout:
@@ -572,6 +583,15 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             rc = proc.wait()
             elapsed = time.time() - exec_start
             timed_out = (rc == -1 and elapsed >= timeout_s - 2)
+
+            # Capture worker stderr (bounded) — the CLI puts crashes/setup
+            # errors here, invisible in the stdout transcript; keep it for
+            # post-hoc diagnosis of invalid trials.
+            try:
+                (out_dir / "worker.stderr.log").write_text(
+                    (proc.stderr.read() or "")[-4000:])
+            except Exception:
+                pass
 
             usage = tl.parse_stream_json(lines)
 

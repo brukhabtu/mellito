@@ -133,7 +133,7 @@ def test_worker_env_ornith_sets_base_url_and_key():
     assert env["ANTHROPIC_SMALL_FAST_MODEL"] == "ornith-35b"
     assert env["ANTHROPIC_API_KEY"] == "sk-proxy-real"
     for k in ("DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING",
-              "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"):
+              "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "IS_SANDBOX"):
         assert env[k] == "1"
 
 
