@@ -1,0 +1,16 @@
+{
+  "id": "selftest-add-bug",
+  "_comment": "Machinery self-test for determinism_check.py. NOT a corpus task. Broken `add` subtracts; the gold fix makes it add. verify is dependency-free so it runs offline in a stock python image (network is disabled during the check).",
+  "image": "python:3.12-slim",
+  "workdir": "/work",
+  "files": {
+    "/tmp/mod_buggy.py": "def add(a, b):\n    return a - b\n",
+    "/tmp/test_probe.py": "print('tests staged')\n",
+    "/tmp/mod_fixed.py": "def add(a, b):\n    return a + b\n"
+  },
+  "setup": ["mkdir -p /work", "cp /tmp/mod_buggy.py /work/mod.py"],
+  "to_broken": ["cp /tmp/test_probe.py /work/test_probe.py"],
+  "to_solution": ["cp /tmp/mod_fixed.py /work/mod.py"],
+  "verify": "python -c \"import sys; sys.path.insert(0, '.'); from mod import add; assert add(2, 3) == 5 and add(10, 20) == 30\"",
+  "timeout_s": 120
+}
