@@ -1,0 +1,18 @@
+id: django__django-10973
+provenance: public-pretrained
+source: "SWE-bench Verified · django/django · base ddb293685235"
+image: swebench/sweb.eval.x86_64.django_1776_django-10973@sha256:38e892e7ff1a1af04ba4d7bca7901c9bd9659191322b2e98a345de09c3882cbf
+description: |
+  Use subprocess.run and PGPASSWORD for client in postgres backend
+  Description
+  	
+  ​subprocess.run was added in python 3.5 (which is the minimum version since Django 2.1). This function allows you to pass a custom environment for the subprocess.
+  Using this in django.db.backends.postgres.client to set PGPASSWORD simplifies the code and makes it more reliable.
+verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 dbshell.test_postgresql"
+timeout_s: 1800
+hidden_tests: tests.patch
+notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench.py

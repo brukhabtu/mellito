@@ -1,0 +1,47 @@
+id: Pyomo__pyomo-3633
+provenance: held-out-public
+source: "SWE-bench-Live 202506 · Pyomo/pyomo · PR#3633 · 2025-06-16"
+image: starryzhang/sweb.eval.x86_64.pyomo_1776_pyomo-3633@sha256:c8268735af4e45a1181512987e6cc8036a2a3942876f46579f6b81a0f83333ec
+description: |
+  Capture Highs output when solving
+  ## Summary
+  
+  Highs logs are not entirely captured. As discussed [on the Highs bug tracker](https://github.com/ERGO-Code/HiGHS/issues/1670), it can result in error messages like the following:
+  ```ERROR: Output stream (<_io.TextIOWrapper name='' mode='w' encoding='utf-8'>) closed before all output was written to it. The following was left in the output buffer: 'ERROR: Output stream (<_io.TextIOWrapper name='' mode='w'\nencoding='utf-8'>)```. The expected behaviour is that no error message and no log line is written.
+  
+  Logs in Highs may be written by any function, including `addRows`. I think the reason for this issue is that they are not covered by `TeeStream`. This is related to #3003.
+  
+  ### Steps to reproduce the issue
+  
+  Run the hangs.py file from [this repository](https://github.com/SolverMax/Random/tree/main/HiGHS-testing/Hangs) on Windows
+  
+  ### Error Message
+  
+  Multiple lines like
+  ```ERROR: Output stream (<_io.TextIOWrapper name='' mode='w' encoding='utf-8'>) closed before all output was written to it. The following was left in the output buffer: 'ERROR: Output stream (<_io.TextIOWrapper name='' mode='w'\nencoding='utf-8'>) ```
+  
+  ### Information on your system
+  
+  Pyomo version: 6.7
+  Python version: 3.11
+  Operating system: Windows
+  How Pyomo was installed (PyPI, conda, source): pip
+  Solver (if applicable): Highspy
+  
+  
+  ### Additional information
+  
+  <!-- If you have any additional information, please list it here. -->
+  
+  
+  <!-- We encourage you to try, as much as possible, to reduce your problem to the minimal example that still reproduces the issue. That would help us a lot in fixing it quickly and effectively!
+  
+  If you want to ask a question (how to use Pyomo, what it can do, etc.), please refer to our [online documentation](https://github.com/Pyomo/pyomo#getting-help) on ways to get help. -->
+verify: "cd /testbed && pytest -rA 'pyomo/common/tests/test_log.py::TestStdoutHandler::test_emit'"
+timeout_s: 1800
+hidden_tests: tests.patch
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

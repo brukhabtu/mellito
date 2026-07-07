@@ -194,3 +194,312 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   tasks (integrity: numbers/tasks must be real).
 - decision-rule states this cycle: MDD n/a · dev/holdout gap n/a (G4 only) ·
   kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P1 Corpus · admission (dev set built to 40 — G2 dev criterion MET)
+- goal: advance **G2 Corpus** — the dev half (≥40 hermetic tasks, each 3+3
+  determinism, provenance recorded).
+- correction to prior "no prebuilt images" block: that was specific to
+  **SWE-Gym**. **SWE-bench Verified** ships a prebuilt per-instance image for
+  every task on Docker Hub (`swebench/sweb.eval.x86_64.<id>`, `__`→`_1776_`),
+  with the repo at `base_commit` under `/testbed` and a `testbed` conda env
+  holding deps. So dev sourcing needs **no image build** — each instance is a
+  ready-made hermetic task. Verified: pulled `psf_1776_requests-1142`, ran the
+  full 3+3 → 6/6. Crucially, the determinism check needs only ONE image
+  resident at a time (pull → check → admit → `docker rmi`), so the ~30 GiB disk
+  quota is not a cap on corpus size.
+- machinery built: `infra/import_swebench.py` (`descriptor` | `admit` | `batch`
+  | `list`). It maps a Verified instance onto the determinism descriptor:
+  base = image `/testbed` hard-reset to `base_commit`; to_broken = apply
+  `test_patch`; to_solution = apply gold `patch`; verify = the repo's real
+  SWE-bench test runner (django `runtests.py`, others `pytest`, etc.) via
+  `swebench`'s `MAP_REPO_VERSION_TO_SPECS[test_cmd]` + `get_test_directives`,
+  under the `testbed` env, exit 0 = pass. `determinism_check.py` unchanged.
+- results: **40/40 dev tasks admitted, every one 6/6** (django 28, astropy 6,
+  pylint 3, scikit-learn 2, pytest 1). `python3 infra/status.py` →
+  `G2 Corpus [PASS] dev tasks >= 40 (40)`. Provenance on all = `public-pretrained`
+  (honest: every Verified repo is public and predates the 2026-06-25 cutoff).
+- 4 conservative REJECTS (correct, not failures): pylint-4661, requests-1142,
+  scikit-learn-14053, astropy-8707 — all 3/6. Cause: SWE-bench's directive
+  scope runs whole test files/modules; a neighbour test that needs network
+  (e.g. requests' httpbin) or is otherwise offline-flaky makes the solution
+  state fail 3/3 too → not 6/6. The check correctly refused them; the
+  over-provisioned candidate pool (66) absorbed the loss.
+- reproducibility guard: re-ran determinism on `django-15127` from the **pinned
+  digest** recorded in its `task.yaml` (not the tag) → 6/6. Corpus is
+  reproducible downstream from the digests, not a cached fluke.
+- infra notes (surprises, logged before working around): (1) Docker Hub
+  503-throttled the daemon's **direct** egress after ~a dozen pulls; fix was to
+  route `dockerd` through the agent proxy (`HTTPS_PROXY=127.0.0.1:43719`) and
+  trust the proxy CA (`update-ca-certificates`) — pulls then stable. (2)
+  Installed `swebench==4.1.0` for the per-repo test-command specs. (3) tox-based
+  repos (sphinx) excluded from candidates: `tox` wants to (re)build a venv,
+  which fights `--network none`; an earlier buggy pass false-admitted
+  sphinx-8595 under a naive `pytest` command — caught and wiped in the clean
+  rebuild.
+- **caveats surfaced for operator (not gate failures):**
+  1. **Repo skew:** 28/40 (70%) are django. A scaffold could overfit django's
+     test idioms. The non-django small-fast-test pool in Verified is thin;
+     rebalancing = one more `batch` run with lower django caps + higher
+     astropy/sklearn/xarray/matplotlib caps (costs ~more pulls of slower suites).
+  2. **Dev is 100% public-pretrained** — the PLAN's corpus strategy wants
+     ~half own-repo (private) in dev. Own repos are **not in this
+     session's scope** and `list_repos` is unavailable for account-owned
+     sessions, so own-repo dev tasks are deferred pending an operator
+     `add_repo`. Memorization inflates all variants ~equally under paired
+     comparison, so a public-only dev set is usable for the search; the
+     contamination tripwire relies on the own-repo **holdout** slice.
+- decision-rule states this cycle: MDD n/a (no variant runs) · dev/holdout gap
+  n/a (G4 only) · kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P1 Corpus · incident (holdout BLOCKED — SWE-rebench post-cutoff assumption is stale)
+- G2's **holdout** criterion (≥15, own-repo/post-cutoff only) is unmet (0/15)
+  and cannot be sourced from public benchmarks this session. Investigated the
+  two legal routes:
+  - **SWE-rebench** (`nebius/SWE-rebench`, public): 21,336 tasks, schema carries
+    `docker_image`/`created_at`/FAIL_TO_PASS. But **latest `created_at` is
+    2025-04-30**; **zero** tasks ≥ the 2026-06-25 cutoff. The PLAN's assumption
+    that SWE-rebench would supply freshly-mined post-cutoff holdout is **stale**
+    — the published dataset hasn't been updated past 2025-04. So it yields no
+    legal (post-cutoff) holdout under the plan's own definition.
+  - **Own-repo reserved bugs** (private): the only remaining legal source,
+    but those repos are not in this session and `list_repos` is unavailable for
+    account-owned sessions.
+- verdict: **holdout BLOCKED — needs operator input**, binding constraint is
+  own-repo access. Unblock path: operator `add_repo`s a private repo; I
+  then author reserved-bug tasks (pinned image + binary verify), 3+3 each, and
+  **stage** them in `tasks/staging/` — the operator moves them into
+  `tasks/holdout/` (guard-holdout.py blocks me by design). No holdout tasks
+  fabricated; no public-pretrained task mislabelled as post-cutoff.
+- decision-rule states this cycle: MDD n/a · dev/holdout gap n/a · kill n/a.
+
+## 2026-07-07 · P1 Corpus · admission (dev rebalanced for repo diversity)
+- operator called the 70% django skew; rebalanced. Dropped 14 django (kept 14),
+  admitted 14 more non-django via the same `batch` path against a non-django
+  candidate pool. Final dev (40): django 14 · scikit-learn 8 · astropy 6 ·
+  pylint 6 · pytest 4 · xarray 2. Max single-repo share now 35% (was 70%).
+  Every task still 6/6; `status.py` G2 dev still PASS (40).
+- same conservative rejects recurred (requests-1142, pylint-4661,
+  sklearn-14053/-14053, astropy-13033/-8707) — whole-file directive scope pulls
+  an offline-flaky/network neighbour test; correct refusals.
+
+## 2026-07-07 · P1 Corpus · incident (no public source yields post-cutoff holdout)
+- operator ruled out own-repo holdout and asked for a **public** holdout
+  source. Researched all
+  public options; **none supplies post-2026-06-25 tasks**:
+  - **SWE-rebench** (`nebius/SWE-rebench`): 21,336 tasks, latest 2025-04-30.
+  - **SWE-bench-Live** (`SWE-bench-Live/SWE-bench-Live`): monthly splits, latest
+    is `202506` (2025-06-20), 50 tasks/month, repos disjoint from dev (mypy,
+    dspy, textual, fastmcp, …). But rows carry **no prebuilt image** (only
+    `test_cmds`/`base_commit`), so tasks need image-building via SWE-bench-Live's
+    harness — not a turnkey pull like SWE-bench Verified.
+  - SWE-bench Verified/Lite: all pre-cutoff public-pretrained (already dev).
+- conclusion: a **genuine post-cutoff public holdout requires mining GitHub PRs
+  merged after 2026-06-25 and building hermetic images ourselves** — no dataset
+  has tasks that fresh. This is a distinct sub-project (env-image build per task,
+  no prebuilts). Two framings for the operator to choose between:
+  (A) **strict** — mine fresh (post-2026-06-25) bugfix PRs from easy-to-build
+      public repos; genuine uncontaminated holdout; heavier, higher build-failure
+      rate.
+  (B) **best-effort** — use SWE-bench-Live `202506` tasks (2025-06, repos
+      disjoint from dev) as a held-out-*repos* proxy; faster (reuse importer once
+      images build) but weaker contamination guarantee — must be logged as such,
+      and the contamination tripwire's meaning weakens.
+- no holdout tasks fabricated; no pre-cutoff task mislabelled post-cutoff.
+  G2 holdout remains 0/15 pending the operator's framing choice.
+
+## 2026-07-07 · P1 Corpus · admission (holdout staged — 18 best-effort tasks; operator move pending)
+- operator chose the **best-effort** holdout framing (SWE-bench-Live 2025-06).
+  Discovery that made it tractable: SWE-bench-Live ships prebuilt per-instance
+  images under the **`starryzhang/sweb.eval.x86_64.<id>`** namespace (repo at
+  `/testbed`, system python, no conda) — same pull-and-check pipeline as dev,
+  no image build needed. (The dataset parquet's image fields are null; the
+  naming is deterministic.)
+- machinery: `infra/import_swebench_live.py` (`descriptor`|`batch`|`list`).
+  Verify is built from each row's `test_cmds` (all `log_parser=pytest`): keep the
+  env wrapper (uv/poetry/`python -m`/PYTHONPATH) but run exactly the
+  FAIL_TO_PASS node ids with `-rA`, exit 0 = pass. Excludes any repo present in
+  dev (disjoint-repos invariant). Writes to `tasks/staging/` only.
+- result: **18 tasks staged, every one 6/6**, across 15 distinct repos (agentops,
+  litellm, aider, textual, praisonai, pyomo, cfn-lint, aiogram, beets, briefcase,
+  powertools-lambda, django-celery-beat, checkov, certbot ×2, conan ×2) — none
+  overlapping the dev repos. Dates 2025-04…2025-06. 1 reject (textual-5823, 3/6,
+  offline-flaky neighbour). Reproducibility re-checked on agentops-1002 from its
+  **pinned digest** → 6/6.
+- provenance: labelled **`held-out-public`** (new, documented in tasks/schema.md
+  + .claude/rules/tasks.md): public repos disjoint from dev, ~2025-06, NOT strict
+  post-cutoff. Honest about the weaker contamination guarantee — a dev/holdout
+  gap here is a **generalization** signal (unseen repos), not a clean
+  contamination verdict. This is the operator-approved deviation from
+  "holdout = own-repo/post-cutoff".
+- **operator action required to close G2 holdout:** move ≥15 of the 18 staged
+  specs from `tasks/staging/` into `tasks/holdout/` (I cannot — guard-holdout.py
+  blocks writes there by design; that block is correct). After the move,
+  `status.py` G2 holdout flips to PASS and the frontier advances to G3.
+- caveat carried forward to G3/G4: baseline + search results must be sliced
+  public-pretrained (dev) vs held-out-public (holdout); the contamination
+  tripwire's strength is reduced accordingly. If a genuine post-cutoff holdout
+  is wanted later, the fresh-PR-mining route (strict option) remains open.
+- decision-rule states this cycle: MDD n/a · dev/holdout gap n/a (G4 only) ·
+  kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P1 Corpus · incident + fix (corpus was not eval-runnable; hidden tests now persisted)
+- session context: fresh ephemeral container. Two environment regressions logged
+  as data points (not worked around): (1) **G1 regressed to frontier** —
+  `status.py` re-runs `modal run ...::smoke` live and it exits 1 because the vLLM
+  endpoint isn't deployed in this container (the G1 PASS was a prior session's
+  live deploy; deploys don't persist). (2) **Modal auth absent** — no
+  `~/.modal.toml`, `modal profile current` = default. So no serving, no sweeps,
+  no baselines this session without an operator re-auth. (3) A probe that listed
+  the sealed holdout split was **BLOCKED by guard-holdout.py** (exit 2) — correct;
+  recorded, not circumvented. Holdout still 0/15 (operator move of the 18 staged
+  specs pending).
+- **gap found in G2 output:** the dev/staging `task.yaml` stored only the F2P
+  `verify` command, NOT the instance's `test_patch`. The determinism check
+  applied the tests itself (via the descriptor's to_broken), so admission passed
+  — but a real eval gives the worker the repo at `base_commit` with NO tests
+  visible, then must inject the hidden tests only at verdict time. Without the
+  stored tests, `verify` references tests absent from the base image → the
+  corpus was **determinism-clean yet not eval-runnable**. Confirmed on
+  django-10973: bare base + verify errored; gold-fix + tests -> PASS,
+  tests-only -> FAIL.
+- **fix:** `import_swebench.py patches` / `import_swebench_live.py patches`
+  persist each admitted task's `test_patch` as `tests.patch` beside its
+  task.yaml (from the datasets, no image re-pull) and add `hidden_tests:
+  tests.patch`. Applied to all **40 dev + 18 staged**. Verified end-to-end with
+  the STORED tests: worker-fixed+tests -> PASS, no-op+tests -> FAIL. Documented
+  the hidden-tests eval-verdict contract in tasks/schema.md and encoded it in
+  `run_trial`'s skeleton (tests injected at verdict time only, never in the
+  worker workspace — no oracle leakage).
+- net: G2 dev is now genuinely eval-ready (40 self-contained tasks). Frontier
+  remains operator-gated: **re-auth Modal** (restores G1 serving + unblocks G3
+  sweeps/baselines under the $150 cap) and **move >=15 staged specs into the
+  holdout split** (closes G2). G3 runner bodies (run_trial/run_sweep) stay
+  Phase-1 TODO — deliberately not written blind, since they can't be exercised
+  without a live endpoint (same integrity stance as the G1 smoke-body deferral).
+- decision-rule states this cycle: MDD n/a · dev/holdout gap n/a (G4 only) ·
+  kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P0 Serving · run (G1 re-confirmed live after container reset)
+- context: the ornith-harness `serve` app was still deployed from the prior
+  session (`modal app list` shows it). After re-auth (see modal-auth skill),
+  ran `modal run infra/modal_app.py::smoke` against it.
+- flake (logged per experiment-integrity before re-running): first run scored
+  **19/20** — trivial 5 failed with `HTTP 500 Internal Server Error`, a
+  transient server-side error (think-leaks 0, tool-call schema OK; the other 19
+  correct). Endpoint logs showed all other requests 200 OK at ~13 tok/s.
+- re-run on the warm endpoint: **smoke PASS — 20/20 trivials, 0 think-leaks,
+  schema-clean tool call** (run `ap-foZEfhxyx3EJ1mMgKWaajg`). The 500 did not
+  recur; treated as a transient endpoint blip, not a regression.
+- **implication for G3 run_trial:** the endpoint can emit a transient 5xx under
+  load. Per PLAN "Error ≠ fail", a trial hitting a transient 5xx must be retried
+  a bounded number of times and, if still failing, recorded as verdict=`invalid`
+  (excluded from paired stats), never `fail`. Bake this into run_trial's worker
+  loop and verdict path.
+- serving perf unchanged: ~13 tok/s generation (eager + triton-GDN). A full dev
+  sweep (40 tasks × trials × agentic multi-step) will be slow — size trial
+  timeouts and budget accordingly; P2 throughput tuning (bake nvcc, re-enable
+  compile/cudagraph) remains a later lever.
+
+## 2026-07-07 · P2 Measurement · run (G3 machinery built + tested; worker body throughput-blocked)
+- goal: G3 measurement machinery. Pinned criteria:
+  1. sweep aggregation (per-task pass, paired win/loss/tie + net vs parent,
+     provenance slices, Wilson CI, cost/$-per-solved) — pure & unit-tested. **PASS**
+     (`infra/sweep_stats.py`; synthetic 3-task test: solved 2/3, paired
+     +1/-1/=1 net 0, invalid excluded, ledger format correct).
+  2. `run_sweep` wired end-to-end: load specs + inline `hidden_tests`, tar the
+     variant's claude-config, fan out run_trial, aggregate, write
+     `experiments/runs/<run_id>/summary.json` + append cost-ledger.csv; refuses
+     holdout without `.holdout-unlocked`; refuses trials<3. **PASS** (validated
+     locally on real dev specs, minus the Modal starmap: spec+tests load, config
+     tar 559 B, summary + ledger written).
+  3. run_trial verdict path (hidden-tests contract) specified + proven locally
+     earlier (gold+tests->PASS, noop+tests->FAIL). **PASS**
+  4. no unverified numbers: all checks mechanical, no GPU claimed. **PASS**
+- **out of scope / BLOCKED — run_trial worker body:** the agentic worker loop
+  (modal.Sandbox on the task image + Claude Code CLI against Ornith via an
+  Anthropic-compat proxy + token/gpu accounting) is NOT built. Deliberately
+  deferred, because it is **throughput-blocked**:
+  - measured serving throughput is ~13 tok/s (eager + triton-GDN, G1 config).
+  - an agentic SWE trajectory is many model calls; even a modest 20k output
+    tok/trial = ~26 min/trial. A 40×5 Ornith baseline = ~85 GPU-hours ≈ **$342**,
+    over the **$150** cap (guard-budget would block it). Even an optimistic 5k
+    tok/trial run is ~$85 for one model.
+  - conclusion: a real G3 baseline is not feasible at the G1 boot config.
+    **P2 throughput tuning is now a prerequisite, not a later lever** — bake a
+    CUDA toolkit (nvcc) into the serve image and re-enable torch.compile +
+    cudagraph capture (the two nvcc/JIT blockers were the reason for
+    `--enforce-eager` + triton-GDN at G1), and/or raise request concurrency, to
+    lift tok/s enough that trials are minutes not hours.
+- decision-rule states: MDD n/a (no runs) · dev/holdout gap n/a · kill n/a.
+- run ledger: none yet (no GPU-bearing sweep executed — machinery only).
+
+## 2026-07-07 · P2 Throughput · incident (batching gives NO benefit; ~13 tok/s ceiling confirmed)
+- probed the live endpoint's aggregate throughput vs concurrency (to test whether
+  the parallel sweep amortises the ~13 tok/s single-stream latency into higher
+  aggregate throughput — which would make the G3 baseline cheap).
+- result (warm endpoint, 256-tok completions):
+  - concurrency=1: ~13 tok/s (the one 1.1 tok/s reading was cold-boot-inflated).
+  - concurrency=8: **2048 tok in 158s = 13.0 tok/s AGGREGATE** — identical to
+    single-stream. Per-request latencies were **staggered 21s→158s**, not
+    clustered, i.e. requests were served **serially, not batched**.
+- conclusion: the endpoint has a hard ~13 tok/s aggregate ceiling that does NOT
+  scale with concurrency. The continuous-batching hope that would have made the
+  sweep cheap is dead — the earlier ~$342 estimate for a 40×5 Ornith baseline
+  stands (or worse, given no batch amortisation). **G3 baselines are infeasible
+  at the current serve config; P2 throughput tuning is a hard prerequisite.**
+- likely causes to chase in P2 (staggered latencies = serialization):
+  1. `--enforce-eager` (no cudagraph) — per-step overhead dominates; re-enabling
+     compile+cudagraph needs a CUDA toolkit (nvcc) baked into the serve image
+     (the reason it was disabled at G1).
+  2. hybrid GDN/Mamba state batching limits in vLLM 0.24 (check `--max-num-seqs`,
+     `--max-num-batched-tokens`, and whether the scheduler runs >1 seq at once).
+  3. Modal serve container request concurrency (`@modal.concurrent`) — confirm
+     vLLM actually receives the 8 requests simultaneously vs Modal queuing them.
+- no ledger entry (probe only; ~1 H100 cold boot + a few short completions).
+  Endpoint scales down after 120s idle.
+- decision-rule states: MDD n/a · dev/holdout gap n/a · kill n/a (no runs).
+
+## 2026-07-07 · P2 Throughput · run (Modal concurrency fix: 13 -> 28 tok/s aggregate)
+- root cause of the flat ~13 tok/s: the serve `@modal.web_server` had no
+  concurrent-input setting, so Modal routed ONE request per container at a time
+  — vLLM's engine logs showed `Running: 1 reqs, Waiting: 0` throughout an
+  8-client probe. vLLM's continuous batcher never saw a queue. NOT a model limit.
+- fix: added `@modal.concurrent(max_inputs=64)` to `serve()` (vLLM command
+  unchanged), redeployed.
+- re-probe (warm): c=1 15.6 tok/s · **c=8 28.0 tok/s aggregate** (was 13.0) — a
+  2× lift from real batching. Per-request latencies still staggered (16–73s), so
+  batching is partial, not the full 8× — more P2 headroom remains (candidates:
+  raise `--max-num-seqs`, drop `--enforce-eager` for cudagraph, check hybrid
+  GDN/Mamba batch limits, push max_inputs/target_inputs).
+- cost impact: roughly halves the earlier estimate — a 40×5 Ornith baseline
+  ~$170 at 28 tok/s (still near the $150 cap; further tuning or a reduced first
+  baseline needed). Iteration latency also halved.
+- G1 unaffected by design (serve command identical); a smoke re-confirm is
+  advisable before relying on it.
+- decision-rule states: MDD n/a · dev/holdout gap n/a · kill n/a.
+
+## 2026-07-07 · P2 Throughput · run (cudagraph+compile: 13 -> 908 tok/s aggregate — G3 unblocked)
+- replaced `--enforce-eager` with `--compilation-config
+  '{"cudagraph_capture_sizes":[1,2,4,8,16,32]}'` (torch.compile inductor +
+  piecewise/full cudagraph). vLLM confirmed `enforce_eager=False`,
+  `cudagraph_mode=FULL_AND_PIECEWISE`, compiled a graph in ~48s at boot; the
+  GDN attention is in `splitting_ops` so no nvcc path is hit (triton GDN +
+  native sampler workarounds retained). Boot is slower (one-time compile) but
+  clean — no crash loop.
+- re-probe (warm, 256-tok completions):
+  - c=8: 2048 tok in **4.0s = 518 tok/s** aggregate (per-req all ~3.9s — truly
+    batched, not staggered).
+  - c=24: 6144 tok in **6.8s = 908 tok/s** aggregate (per-req all ~6.6s).
+  - vs the eager config's flat 13 tok/s: a **~70× aggregate speedup**. Warm
+    single-stream also ~2.5× (≈39 tok/s from the batch-24 per-req rate).
+- root cause recap: eager mode's per-decode-step overhead both throttled
+  single-stream AND swamped batching (the earlier "Running: 1" symptom). With
+  cudagraph the engine batches the whole fleet.
+- **cost impact — G3 is now cheap:** at 908 tok/s a 40×5 Ornith baseline is
+  ~$1 (20k tok/trial) to ~$3 (60k tok/trial) of H100 time — far under the $150
+  cap, and minutes of wall-clock. The throughput blocker is resolved; G3 can run.
+- correctness CONFIRMED: G1 smoke re-run on the compiled config = **PASS 20/20
+  trivials, 0 think-leaks, tool-call OK** (run ap-RW4x5gYvUMJZb9c0ZwrnmF), and it
+  finished in ~90s vs ~10 min under eager. Compiled greedy output is identical.
+- @modal.concurrent(max_inputs=64) from the prior fix is retained and is what
+  lets the fleet's requests reach the engine together.

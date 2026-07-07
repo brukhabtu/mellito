@@ -1,0 +1,19 @@
+id: django__django-13023
+provenance: public-pretrained
+source: "SWE-bench Verified · django/django · base f83b44075daf"
+image: swebench/sweb.eval.x86_64.django_1776_django-13023@sha256:aaf6d5643d9e9bc9308de9c8736ed0c46c12dd75cfbd5c89d5089391fe15fce0
+description: |
+  DecimalField.to_python() raises TypeError on dict values.
+  Description
+  	
+  A call to DecimalField.to_python() with a dictionary as the value parameter produces TypeError instead of ValidationError. This is a problem, for example, when you try to save a model object, and a decimal field got set to a dictionary by mistake. The TypeError exception that comes back makes it hard to track the problem to the field if the object has a lot of fields.
+  I am proposing a patch to fix it:
+  ​https://github.com/django/django/pull/13023
+verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 model_fields.test_decimalfield"
+timeout_s: 1800
+hidden_tests: tests.patch
+notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench.py

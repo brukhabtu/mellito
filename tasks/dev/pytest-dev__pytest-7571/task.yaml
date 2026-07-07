@@ -1,0 +1,26 @@
+id: pytest-dev__pytest-7571
+provenance: public-pretrained
+source: "SWE-bench Verified · pytest-dev/pytest · base 422685d0bdc1"
+image: swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7571@sha256:68380eca74a6071e072a65f84cdc012bf17bd9f443174dde350b353ff4b675d4
+description: |
+  caplog fixture doesn't restore log level after test
+  From the documentation at https://docs.pytest.org/en/6.0.0/logging.html#caplog-fixture, "The log levels set are restored automatically at the end of the test".
+  It used to work, but looks broken in new 6.0 release. Minimal example to reproduce:
+  
+  ```
+  def test_foo(caplog):
+      caplog.set_level(42)
+  
+  def test_bar(caplog):
+      print(caplog.handler.level)
+  ```
+  
+  It prints "0" for pytest<6, "42" after.
+verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && pytest -rA testing/logging/test_fixture.py"
+timeout_s: 1800
+hidden_tests: tests.patch
+notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench.py

@@ -1,0 +1,21 @@
+id: Aider-AI__aider-3806
+provenance: held-out-public
+source: "SWE-bench-Live 202504 · Aider-AI/aider · PR#3806 · 2025-04-14"
+image: starryzhang/sweb.eval.x86_64.aider-ai_1776_aider-3806@sha256:e25636122bcaacff0c70a58b3b2a8ae284c3d318a379c4aacf07d5951e1ebe95
+description: |
+  How do I disable Playwright
+  ### Issue
+  
+  I don't need Playwright yet aider keeps asking me to install it. It is annoying.
+  
+  ### Version and model info
+  
+  _No response_
+verify: "cd /testbed && pytest -rA 'tests/scrape/test_playwright_disable.py::test_commands_web_disable_playwright'"
+timeout_s: 1800
+hidden_tests: tests.patch
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

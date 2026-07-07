@@ -1,0 +1,46 @@
+id: conan-io__conan-18089
+provenance: held-out-public
+source: "SWE-bench-Live 202504 · conan-io/conan · PR#18089 · 2025-04-06"
+image: starryzhang/sweb.eval.x86_64.conan-io_1776_conan-18089@sha256:608d8de0ae51f472b2d4dde31c414821421309a19cfd13577a39a2f21ce1534f
+description: |
+  [question] confusing log: conan tries to connect to remote anonymously
+  ### What is your question?
+  
+  Hi,
+  
+  I'm slightly confused by output of conan during conan remote login call.
+  
+  I'm doing it like this:
+  ```
+  conan remote remove "*"
+  conan remote add my_remote_name https://my_remote_url
+  conan remote login -p my_token my_remote_name my_username
+  ```
+  
+  The output that I see from last command is:
+  ```
+  Connecting to remote 'my_remote_name' anonymously
+  Authenticated in remote 'my_remote_name' with user 'my_username'
+  Changed user of remote 'my_remote_name' from 'None' (anonymous) to 'my_username' (authenticated)
+  ```
+  
+  If I do the same command again:
+  ```
+  Connecting to remote 'my_remote_name' with user 'my_username'
+  Authenticated in remote 'my_remote_name' with user 'my_username'
+  Changed user of remote 'my_remote_name' from 'my_username' (authenticated) to 'my_username' (authenticated)
+  ```
+  
+  For me personally it's confusing to see first line "Connecting to remote 'my_remote_name' anonymously" when I'm providing token and username. Do I understand correctly that it just shows previous username here if it was present in local database? And actually there is no anonymous connection to server?
+  
+  ### Have you read the CONTRIBUTING guide?
+  
+  - [x] I've read the CONTRIBUTING guide
+verify: "cd /testbed && python -m pytest -rA 'test/integration/command/test_remote_users.py::TestUser::test_command_user_with_password_spaces'"
+timeout_s: 1800
+hidden_tests: tests.patch
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

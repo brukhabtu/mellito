@@ -1,0 +1,15 @@
+id: AgentOps-AI__agentops-1002
+provenance: held-out-public
+source: "SWE-bench-Live 202505 · AgentOps-AI/agentops · PR#1002 · 2025-05-23"
+image: starryzhang/sweb.eval.x86_64.agentops-ai_1776_agentops-1002@sha256:1c19dd830ef321c74a8cc8f78cea627d9ce858e75b3952aed604edf2e8333316
+description: |
+  Set User-Agent header on requests to api.agentops.ai
+  Include sdk version as well.
+verify: "cd /testbed && pytest -rA 'tests/unit/test_user_agent.py::test_user_agent_header'"
+timeout_s: 1800
+hidden_tests: tests.patch
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

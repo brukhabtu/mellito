@@ -1,0 +1,23 @@
+id: certbot__certbot-10317
+provenance: held-out-public
+source: "SWE-bench-Live 202506 · certbot/certbot · PR#10317 · 2025-06-06"
+image: starryzhang/sweb.eval.x86_64.certbot_1776_certbot-10317@sha256:841efcf3ab3763e13a0cf41aa5083406899bdf2f0e48c604043a70f6e19eeb2a
+description: |
+  [Task]: client MUST NOT check renewalinfo after expiration
+  ### Task description
+  
+  i just read thru the ARI spec and came across the line:
+  
+  > Clients MUST NOT check a certificate's RenewalInfo after the certificate has expired.
+  
+  from https://www.ietf.org/archive/id/draft-ietf-acme-ari-08.html#section-4.3
+  
+  we don't currently have code that prevents this do we @jsha? should we?
+verify: "cd /testbed && pytest -rA 'acme/src/acme/_internal/tests/client_test.py::ClientV2Test::test_renewal_time_expired_cert'"
+timeout_s: 1800
+hidden_tests: tests.patch
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

@@ -1,0 +1,83 @@
+id: Textualize__textual-5782
+provenance: held-out-public
+source: "SWE-bench-Live 202505 · Textualize/textual · PR#5782 · 2025-05-01"
+image: starryzhang/sweb.eval.x86_64.textualize_1776_textual-5782@sha256:b44ded1984fade586155916235f69dde3763da1025fcf65aab7cd94286912aa6
+description: |
+  Log leak from on_unmount when run_async is used
+  Observed since `0.80.0`, MRE works on the latest `0.82.0`
+  
+  When the Textual app is started via `run_async`, logs inside `on_unmount` are occasionally (often) displayed in the terminal. Occasionally (less often) there is also :
+  
+  ```bash
+  Unmount() >>> MyApp(title='MyApp', classes={'-dark-mode'}, pseudo_classes={'dark', 'focus'}) method=<MyApp.on_unmount>
+  ```
+  
+  being printed out.
+  
+  In real app, there is also sometimes `focus was removed` visible [from there](https://github.com/Textualize/textual/blob/0f2f6c7f51a2cecffcfbbe58c2440cb7ec4c9d2f/src/textual/screen.py#L855)
+  
+  Running this MRE with:
+  
+  ```python
+  MyApp().run()
+  ```
+  
+  instead of:
+  
+  ```python
+  asyncio.run(MyApp().run_async())
+  ```
+  
+  works fine. When you close the application, nothing remains in the terminal output.
+  
+  
+  MRE:
+  
+  ```python
+  from __future__ import annotations
+  
+  import asyncio
+  
+  from textual.app import App, ComposeResult
+  from textual.binding import Binding
+  from textual.widgets import Footer, Label
+  
+  
+  class MyApp(App):
+      BINDINGS = [
+          Binding("q", "quit", "Quit"),
+      ]
+  
+      def on_load(self) -> None:
+          self.log("Loaded")
+  
+      def on_mount(self) -> None:
+          self.log("Mounted")
+  
+      def on_unmount(self) -> None:
+          self.log("Unmounted")
+  
+      def compose(self) -> ComposeResult:
+          yield Label("Press 'q' to quit.")
+          yield Footer()
+  
+  
+  asyncio.run(MyApp().run_async())
+  ```
+  
+  terminal output:
+  
+  ![image](https://github.com/user-attachments/assets/72347209-0926-444c-884f-bed41e242680)
+  
+  
+  
+  
+  This has some consequences when the app is performing startup/shutdown actions.  It works OK on the startup because logs happening in `on_load`/`on_mount` are not printed to the terminal and are not visible when the app is closed. But those of the shutdown actions placed in `on_unmount` are.
+verify: "cd /testbed && poetry run pytest -rA 'tests/test_app.py::test_app_loop'"
+timeout_s: 1800
+hidden_tests: tests.patch
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

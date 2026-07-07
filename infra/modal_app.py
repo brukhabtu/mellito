@@ -53,6 +53,13 @@ vllm_image = (
     scaledown_window=120,  # warm containers bill; keep this short
     timeout=60 * MINUTES,
 )
+# Let ONE container serve many requests at once. Without this, Modal routes a
+# single request per container to the web server, so vLLM's continuous batcher
+# never sees a queue (measured: 8 concurrent clients -> "Running: 1 reqs" in the
+# engine, ~13 tok/s aggregate = single-stream). With concurrent inputs, vLLM
+# batches across the fleet of trials, multiplying aggregate throughput on the
+# one H100 — the lever that makes a G3 sweep affordable.
+@modal.concurrent(max_inputs=64)
 # First boot downloads ~35GB of FP8 shards into the volume before vLLM can
 # bind :8000; subsequent boots hit the cached volume (~1-2 min). Give the
 # startup probe room for the cold pull.
@@ -89,10 +96,13 @@ def serve():
         # GDN prefill kernel, which JIT-compiles via nvcc — absent from this
         # slim pip image (crash loop). Triton JIT needs no nvcc.
         "--gdn-prefill-backend", "triton",
-        # G1 boot: skip torch.compile + cudagraph capture for a fast, robust
-        # cold start. Output is identical to compiled mode; revisit for
-        # throughput in P2 (bake nvcc / re-enable compile if worth it).
-        "--enforce-eager",
+        # P2 throughput: cudagraph + torch.compile (inductor->triton, no nvcc)
+        # remove the per-decode-step Python/launch overhead that pinned eager
+        # mode to ~15 tok/s single-stream. Cap capture sizes so cold-boot graph
+        # capture stays bounded (the reason eager was used at G1). Sampler and
+        # GDN-prefill stay on their nvcc-free backends (set above).
+        "--compilation-config",
+        '{"cudagraph_capture_sizes": [1, 2, 4, 8, 16, 32]}',
     ]
     subprocess.Popen(cmd)
 
@@ -290,7 +300,13 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int) -> dic
         workspace root (the worker CLAUDE.md tells the model to use it);
       - runs the worker (Claude Code CLI against the ornith endpoint) with
         the task description;
-      - executes task_spec['verify']; the exit code is the verdict;
+      - VERDICT (hidden-tests contract, see tasks/schema.md): after the worker
+        finishes, reset to base + reapply the worker's diff, then
+        `git apply` task_spec['hidden_tests'] (the tests.patch beside task.yaml)
+        and run task_spec['verify']; the exit code is the verdict. The tests are
+        injected ONLY here — never in the worker's workspace — so the model
+        cannot read or edit them (corpus-curator item 6: no oracle leakage).
+        Verified locally that stored tests flip fail->pass for a gold fix.
       - records tokens, gpu_seconds, wall_clock, transcript;
       - an execution error is verdict='invalid', never 'fail'.
 
@@ -309,23 +325,95 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int) -> dic
     }
 
 
+H100_USD_PER_HOUR = 3.95  # Modal H100 list rate; the ledger is the source of truth
+
+
+def _load_spec(task_dir: Path) -> dict:
+    """task.yaml -> the dict run_trial needs, with the hidden tests inlined."""
+    import yaml
+    d = yaml.safe_load((task_dir / "task.yaml").read_text())
+    ht = d.get("hidden_tests")
+    d["hidden_tests_content"] = (task_dir / ht).read_text() if ht else None
+    return d
+
+
+def _tar_config(variant_dir: Path) -> bytes:
+    """Tar the variant's claude-config/ for materialization inside the task
+    container. Structural invariant: only claude-config/ ships — never this
+    repo's own .claude/."""
+    import io
+    import tarfile
+    cfg = variant_dir / "claude-config"
+    if not cfg.is_dir():
+        raise SystemExit(f"variant has no claude-config/: {variant_dir}")
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        tar.add(cfg, arcname="claude-config")
+    return buf.getvalue()
+
+
+def _parent_per_task(parent: str | None, root: Path) -> dict | None:
+    """Latest parent-variant run summary -> its per_task block, for paired stats."""
+    if not parent:
+        return None
+    runs = sorted((root / "experiments" / "runs").glob(f"*-{parent}/summary.json"))
+    if not runs:
+        return None
+    summ = json.loads(runs[-1].read_text())
+    return {t: {"valid": v["valid"], "pass_rate": v["pass_rate"]}
+            for t, v in summ.get("per_task", {}).items()}
+
+
 @app.local_entrypoint()
 def run_sweep(variant: str, trials: int = 5, split: str = "dev"):
     """Fan a variant out across the task set; write runs/<run_id>/ and append
     the cost ledger. Holdout runs require the operator's .holdout-unlocked
     flow upstream — this entrypoint refuses split='holdout' unless the flag
     file exists, as defense in depth."""
+    import sys
     root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "infra"))
+    import sweep_stats as stats
+
     if split == "holdout" and not (root / ".holdout-unlocked").exists():
         raise SystemExit("holdout sealed: operator must create .holdout-unlocked")
+    if trials < 3:
+        raise SystemExit("trials < 3: paired stats need >=3 (PLAN decision rules)")
 
-    run_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{variant}"
+    variant_dir = root / "experiments" / "variants" / variant
+    manifest = variant_dir / "manifest.yaml"
+    if not manifest.exists():
+        raise SystemExit(f"no such variant: {variant}")
+    import yaml
+    parent = yaml.safe_load(manifest.read_text()).get("parent")
+
     task_dirs = sorted((root / "tasks" / split).glob("*/task.yaml"))
     if not task_dirs:
         raise SystemExit(f"no tasks in tasks/{split}/")
+    specs = [_load_spec(d) for d in task_dirs]
+    cfg_tar = _tar_config(variant_dir)
 
-    # TODO(phase1): load specs, tar the variant's claude-config/, then:
-    #   results = list(run_trial.starmap(work_items))
-    # then write summary.json (paired stats vs parent, provenance slices)
-    # and append findings/cost-ledger.csv: run_id,timestamp,gpu_seconds,usd.
-    raise SystemExit(f"run_sweep skeleton: found {len(task_dirs)} tasks; runner body is Phase 1 work (run {run_id})")
+    run_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{variant}"
+    print(f"[sweep] {run_id}: {len(specs)} tasks x {trials} trials "
+          f"({len(specs) * trials} trials), variant {variant} (parent {parent})")
+
+    work = [(spec, cfg_tar, t) for spec in specs for t in range(trials)]
+    prov = {s["id"]: s.get("provenance") for s in specs}
+    results = []
+    for r in run_trial.starmap(work):
+        r["provenance"] = prov.get(r.get("task"))
+        results.append(r)
+
+    summary = stats.summarize(run_id, variant, parent, results,
+                              _parent_per_task(parent, root), H100_USD_PER_HOUR)
+    run_dir = root / "experiments" / "runs" / run_id
+    stats.write_summary(run_dir, summary)
+    stats.append_ledger(root / "findings" / "cost-ledger.csv", run_id,
+                        f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%S}",
+                        summary["cost"]["gpu_seconds"], summary["cost"]["usd"])
+
+    c, p = summary["cost"], summary["paired_vs_parent"]
+    print(f"[sweep] {run_id}: solved {summary['solved_tasks']}/{summary['valid_tasks']} "
+          f"tasks (rate {summary['pass_rate_over_tasks']}) · paired vs {parent}: "
+          f"+{p['wins']}/-{p['losses']}/={p['ties']} net {p['net_tasks']} · "
+          f"${c['usd']} ({c['invalid_trials']} invalid) · runs/{run_id}/summary.json")
