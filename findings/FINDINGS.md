@@ -601,3 +601,18 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   discarded by the reset), so the authoritative hidden test passed on the fix.
 - G3 runner is validated end-to-end. Next: 3×3 mini-sweep, then the full
   40×5 Ornith baseline.
+
+## 2026-07-07 · P2 Measurement · run (3×3 mini-sweep — pipeline clean across repo types)
+- run `20260707T214037-v001-baseline-partial`: v001 × 3 tasks × 3 trials = 9
+  trials over three different repo test-runners (django runtests, pylint pytest,
+  astropy pytest). **0 invalid** — the runner is robust across runner idioms.
+- per-task (majority-of-3 = solved): django-10973 2/3 → solved; astropy-12907
+  1/3 → not solved; pylint-6386 0/3 → not solved. solved 1/3, public-pretrained
+  slice ci95 [0.061, 0.792] (n=3, wide by design). Real per-trial variance —
+  Ornith is not trivially acing the set, so the baseline carries signal.
+- cost: summed gpu 71.3 s / $0.078; ledger row uses max(sum, wall)=232 s /
+  $0.255 (concurrent trials → wall > sum). api_usd 0. `partial:true` recorded so
+  it can't be picked as a paired-stats parent. summary.json structure verified
+  (per_task, by_provenance, cost, paired_vs_parent).
+- gate C3 (≤1 invalid of 9) PASSED with 0. Cleared to run the full 40×5 Ornith
+  baseline.
