@@ -399,3 +399,36 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   sweep (40 tasks × trials × agentic multi-step) will be slow — size trial
   timeouts and budget accordingly; P2 throughput tuning (bake nvcc, re-enable
   compile/cudagraph) remains a later lever.
+
+## 2026-07-07 · P2 Measurement · run (G3 machinery built + tested; worker body throughput-blocked)
+- goal: G3 measurement machinery. Pinned criteria:
+  1. sweep aggregation (per-task pass, paired win/loss/tie + net vs parent,
+     provenance slices, Wilson CI, cost/$-per-solved) — pure & unit-tested. **PASS**
+     (`infra/sweep_stats.py`; synthetic 3-task test: solved 2/3, paired
+     +1/-1/=1 net 0, invalid excluded, ledger format correct).
+  2. `run_sweep` wired end-to-end: load specs + inline `hidden_tests`, tar the
+     variant's claude-config, fan out run_trial, aggregate, write
+     `experiments/runs/<run_id>/summary.json` + append cost-ledger.csv; refuses
+     holdout without `.holdout-unlocked`; refuses trials<3. **PASS** (validated
+     locally on real dev specs, minus the Modal starmap: spec+tests load, config
+     tar 559 B, summary + ledger written).
+  3. run_trial verdict path (hidden-tests contract) specified + proven locally
+     earlier (gold+tests->PASS, noop+tests->FAIL). **PASS**
+  4. no unverified numbers: all checks mechanical, no GPU claimed. **PASS**
+- **out of scope / BLOCKED — run_trial worker body:** the agentic worker loop
+  (modal.Sandbox on the task image + Claude Code CLI against Ornith via an
+  Anthropic-compat proxy + token/gpu accounting) is NOT built. Deliberately
+  deferred, because it is **throughput-blocked**:
+  - measured serving throughput is ~13 tok/s (eager + triton-GDN, G1 config).
+  - an agentic SWE trajectory is many model calls; even a modest 20k output
+    tok/trial = ~26 min/trial. A 40×5 Ornith baseline = ~85 GPU-hours ≈ **$342**,
+    over the **$150** cap (guard-budget would block it). Even an optimistic 5k
+    tok/trial run is ~$85 for one model.
+  - conclusion: a real G3 baseline is not feasible at the G1 boot config.
+    **P2 throughput tuning is now a prerequisite, not a later lever** — bake a
+    CUDA toolkit (nvcc) into the serve image and re-enable torch.compile +
+    cudagraph capture (the two nvcc/JIT blockers were the reason for
+    `--enforce-eager` + triton-GDN at G1), and/or raise request concurrency, to
+    lift tok/s enough that trials are minutes not hours.
+- decision-rule states: MDD n/a (no runs) · dev/holdout gap n/a · kill n/a.
+- run ledger: none yet (no GPU-bearing sweep executed — machinery only).
