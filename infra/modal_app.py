@@ -832,7 +832,8 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
 
     is_ornith = worker_model == "ornith-35b"
 
-    task_dirs = sorted((root / "tasks" / split).glob("*/task.yaml"))
+    # glob yields the task.yaml FILES; _load_spec wants the task DIRECTORY.
+    task_dirs = sorted(p.parent for p in (root / "tasks" / split).glob("*/task.yaml"))
     if not task_dirs:
         raise SystemExit(f"no tasks in tasks/{split}/")
     specs = [_load_spec(d) for d in task_dirs]
