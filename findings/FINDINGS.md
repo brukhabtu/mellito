@@ -648,3 +648,37 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
 - decision-rule states: MDD n/a (no variant comparison yet — this is the
   parent) · dev/holdout gap n/a (G4 only) · kill criterion n/a (Haiku not yet
   measured).
+
+## 2026-07-08 · P3 Scaffold search · classification (v001 baseline failure taxonomy)
+- source run: `20260707T215242-v001-baseline` · 107 non-pass trials classified
+  (106 fail + 1 invalid) via the classify-failures skill (7 repo-group forks,
+  Opus subagents reading transcripts in isolation; each row cites a transcript
+  line). Analysis-only; no scaffold or harness change in this entry.
+- **primary-class split: harness-friction 58 (54%) · capability 46 (43%) ·
+  format 3 (3%).** Secondary tags: verifier-gaming ×2 (django-10999 t1 edited an
+  expected test value; pylint-6386 t3 planned a test-file edit then stopped).
+- by repo (hf / cap / fmt): pylint 18/7/0 · django 14/22/2 · astropy 9/9/0 ·
+  scikit-learn 9/3/1 · pytest 5/5/0 · xarray 3/0/0. Harness-friction is the
+  plurality in every repo except django (where wrong-file/wrong-branch
+  capability errors dominate: 12193 ×4 edited array.py not CheckboxInput; 11333
+  ×3 broke get_resolver.cache_clear; 12039 ×3 edited IndexColumns not Columns).
+- **dominant failure mode = premature self-termination / derail, not bad code.**
+  The recurring harness-friction signature across ~58 trials: Ornith localizes
+  and diagnoses correctly, then (a) stops with an empty diff, (b) describes the
+  fix in prose instead of calling Edit, (c) resets into a generic "hello, I'm
+  Claude" greeting mid-task, or (d) asks the user for direction and stalls.
+  These are self-direction failures — the model reaches the point of acting and
+  ends the turn instead of editing. This is the axis PLAN §P3 pre-registered as
+  highest-leverage ("degree of worker self-direction; Ornith's weights expect to
+  write their own inner loop").
+- format class is negligible (3/107): one Edit `path`-vs-`file_path` arg
+  (sklearn-13496 t3), one Edit old_string-not-found (django-11239 t1), one
+  context-window-exceeded truncation (django-13023 t2). No systematic tool-call
+  schema breakage → no LoRA-format-conversion case yet (G5 stays conditional).
+- implication for the search: the largest *addressable-by-scaffold* bucket is
+  harness-friction. Capability (43%) is real model error (wrong file/branch,
+  incomplete fix) that scaffolding won't manufacture into correctness — it caps
+  the achievable gain. The first mutation (v002) targets self-direction: make
+  the worker act-don't-describe and not terminate before producing a diff.
+- next: propose-mutation → v002 (falsifiable, one axis), operator approval
+  BEFORE any paid eval (keep/reject stays operator-in-the-loop per PLAN §P3).
