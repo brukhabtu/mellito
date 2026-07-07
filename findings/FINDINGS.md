@@ -88,3 +88,24 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   Remaining is pure implementation: U4 (smoke body) + U3 (`modal deploy`,
   H100 GPU spend under the $150 cap; ledger currently empty). G1 is now
   actionable, no missing credentials.
+
+## 2026-07-07 · P0 Serving · incident (serving surprise, logged before workaround)
+- context: first `modal deploy` + cold boot of Ornith on 1×H100, vLLM 0.24.0.
+- confirmed good: vLLM resolves `Qwen3_5MoeForConditionalGeneration`, accepts
+  `--tool-call-parser qwen3_xml` / `--reasoning-parser qwen3` / `max_model_len
+  32768`; Mamba/GDN hybrid handled ('align' cache mode); weights are public and
+  pulled anonymously (35.09 GiB in 92 s via Xet, now cached in the volume — a
+  few transient `Connection reset by peer` on file-listing, auto-retried).
+- surprise / blocker: the model's **gated-delta-net linear-attention** layers
+  use FlashInfer's GDN prefill kernel, which is **JIT-compiled and needs
+  `nvcc`**. The `debian_slim`+pip vLLM image has no CUDA toolkit →
+  `RuntimeError: Could not find nvcc and default cuda_home='/usr/local/cuda'
+  doesn't exist`, repeated → EngineCore restart loop (pid 74→73), never binds
+  :8000. vLLM's own log names the fix: "Set --gdn-prefill-backend triton".
+- workaround (applied next commit): add `--gdn-prefill-backend triton` (Triton
+  JIT needs no nvcc) and `--enforce-eager` (skip torch.compile + cudagraph
+  capture over 51 sizes) for a fast, robust **G1 boot**. Correctness is
+  unchanged; both are throughput/latency knobs to revisit in P2 (either bake
+  nvcc + re-enable compile for perf, or keep eager if fast enough).
+- cost note: no ledger entry (smoke is a gate, not a sweep); GPU time was the
+  cold-boot loop only. status.py still at frontier G1.
