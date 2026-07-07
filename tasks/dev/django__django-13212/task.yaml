@@ -1,0 +1,20 @@
+id: django__django-13212
+provenance: public-pretrained
+source: "SWE-bench Verified · django/django · base f4e93919e460"
+image: swebench/sweb.eval.x86_64.django_1776_django-13212@sha256:a0ad873326ee690f074c573ba28914b0e1ab53a425ae9fc131f0bcb711ab2f25
+description: |
+  Make validators include the provided value in ValidationError
+  Description
+  	
+  It is sometimes desirable to include the provide value in a custom error message. For example:
+  “blah” is not a valid email.
+  By making built-in validators provide value to ValidationError, one can override an error message and use a %(value)s placeholder.
+  This placeholder value matches an example already in the docs:
+  ​https://docs.djangoproject.com/en/3.0/ref/validators/#writing-validators
+verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 forms_tests.tests.test_validators"
+timeout_s: 1800
+notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench.py

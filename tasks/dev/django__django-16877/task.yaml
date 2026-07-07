@@ -1,0 +1,18 @@
+id: django__django-16877
+provenance: public-pretrained
+source: "SWE-bench Verified · django/django · base 98f6ada0e205"
+image: swebench/sweb.eval.x86_64.django_1776_django-16877@sha256:88f6b400cf3281bef2596b1864c9dcf25053723877d644d3e84c024b3ceab9fd
+description: |
+  New template filter `escapeseq`
+  Description
+  	
+  Following #34574, and after some conversations within the security team, it seems appropriate to provide a new template filter escapeseq which would be to escape what safeseq is to safe. An example of usage would be:
+  {{ some_list|escapeseq|join:"," }}
+  where each item of some_list is escaped before applying the join operation. This usage makes sense in a context where autoescape is off.
+verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 template_tests.filter_tests.test_escapeseq"
+timeout_s: 1800
+notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench.py
