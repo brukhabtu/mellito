@@ -1,0 +1,24 @@
+id: django__django-16527
+provenance: public-pretrained
+source: "SWE-bench Verified · django/django · base bd366ca2aeff"
+image: swebench/sweb.eval.x86_64.django_1776_django-16527@sha256:50c29a0b95a272b92b3dbd72ffc6042a4526d53381ad33d3e83a17c8255305e5
+description: |
+  "show_save_as_new" in admin can add without this permission
+  Description
+  	 
+  		(last modified by Mariusz Felisiak)
+  	 
+  At "django/contrib/admin/templatetags/admin_modify.py" file, line 102, I think you must put one more verification for this tag: "and has_add_permission", because "save_as_new" is a add modification.
+  I rewrite this for my project:
+  			"show_save_as_new": not is_popup
+  			and has_add_permission # This line that I put!!!
+  			and has_change_permission
+  			and change
+  			and save_as,
+verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 admin_views.test_templatetags"
+timeout_s: 1800
+notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench.py

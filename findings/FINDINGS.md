@@ -194,3 +194,80 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   tasks (integrity: numbers/tasks must be real).
 - decision-rule states this cycle: MDD n/a · dev/holdout gap n/a (G4 only) ·
   kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P1 Corpus · admission (dev set built to 40 — G2 dev criterion MET)
+- goal: advance **G2 Corpus** — the dev half (≥40 hermetic tasks, each 3+3
+  determinism, provenance recorded).
+- correction to prior "no prebuilt images" block: that was specific to
+  **SWE-Gym**. **SWE-bench Verified** ships a prebuilt per-instance image for
+  every task on Docker Hub (`swebench/sweb.eval.x86_64.<id>`, `__`→`_1776_`),
+  with the repo at `base_commit` under `/testbed` and a `testbed` conda env
+  holding deps. So dev sourcing needs **no image build** — each instance is a
+  ready-made hermetic task. Verified: pulled `psf_1776_requests-1142`, ran the
+  full 3+3 → 6/6. Crucially, the determinism check needs only ONE image
+  resident at a time (pull → check → admit → `docker rmi`), so the ~30 GiB disk
+  quota is not a cap on corpus size.
+- machinery built: `infra/import_swebench.py` (`descriptor` | `admit` | `batch`
+  | `list`). It maps a Verified instance onto the determinism descriptor:
+  base = image `/testbed` hard-reset to `base_commit`; to_broken = apply
+  `test_patch`; to_solution = apply gold `patch`; verify = the repo's real
+  SWE-bench test runner (django `runtests.py`, others `pytest`, etc.) via
+  `swebench`'s `MAP_REPO_VERSION_TO_SPECS[test_cmd]` + `get_test_directives`,
+  under the `testbed` env, exit 0 = pass. `determinism_check.py` unchanged.
+- results: **40/40 dev tasks admitted, every one 6/6** (django 28, astropy 6,
+  pylint 3, scikit-learn 2, pytest 1). `python3 infra/status.py` →
+  `G2 Corpus [PASS] dev tasks >= 40 (40)`. Provenance on all = `public-pretrained`
+  (honest: every Verified repo is public and predates the 2026-06-25 cutoff).
+- 4 conservative REJECTS (correct, not failures): pylint-4661, requests-1142,
+  scikit-learn-14053, astropy-8707 — all 3/6. Cause: SWE-bench's directive
+  scope runs whole test files/modules; a neighbour test that needs network
+  (e.g. requests' httpbin) or is otherwise offline-flaky makes the solution
+  state fail 3/3 too → not 6/6. The check correctly refused them; the
+  over-provisioned candidate pool (66) absorbed the loss.
+- reproducibility guard: re-ran determinism on `django-15127` from the **pinned
+  digest** recorded in its `task.yaml` (not the tag) → 6/6. Corpus is
+  reproducible downstream from the digests, not a cached fluke.
+- infra notes (surprises, logged before working around): (1) Docker Hub
+  503-throttled the daemon's **direct** egress after ~a dozen pulls; fix was to
+  route `dockerd` through the agent proxy (`HTTPS_PROXY=127.0.0.1:43719`) and
+  trust the proxy CA (`update-ca-certificates`) — pulls then stable. (2)
+  Installed `swebench==4.1.0` for the per-repo test-command specs. (3) tox-based
+  repos (sphinx) excluded from candidates: `tox` wants to (re)build a venv,
+  which fights `--network none`; an earlier buggy pass false-admitted
+  sphinx-8595 under a naive `pytest` command — caught and wiped in the clean
+  rebuild.
+- **caveats surfaced for operator (not gate failures):**
+  1. **Repo skew:** 28/40 (70%) are django. A scaffold could overfit django's
+     test idioms. The non-django small-fast-test pool in Verified is thin;
+     rebalancing = one more `batch` run with lower django caps + higher
+     astropy/sklearn/xarray/matplotlib caps (costs ~more pulls of slower suites).
+  2. **Dev is 100% public-pretrained** — the PLAN's corpus strategy wants
+     ~half own-repo (simstim/Kerf) in dev. Own repos are **not in this
+     session's scope** and `list_repos` is unavailable for account-owned
+     sessions, so own-repo dev tasks are deferred pending an operator
+     `add_repo`. Memorization inflates all variants ~equally under paired
+     comparison, so a public-only dev set is usable for the search; the
+     contamination tripwire relies on the own-repo **holdout** slice.
+- decision-rule states this cycle: MDD n/a (no variant runs) · dev/holdout gap
+  n/a (G4 only) · kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P1 Corpus · incident (holdout BLOCKED — SWE-rebench post-cutoff assumption is stale)
+- G2's **holdout** criterion (≥15, own-repo/post-cutoff only) is unmet (0/15)
+  and cannot be sourced from public benchmarks this session. Investigated the
+  two legal routes:
+  - **SWE-rebench** (`nebius/SWE-rebench`, public): 21,336 tasks, schema carries
+    `docker_image`/`created_at`/FAIL_TO_PASS. But **latest `created_at` is
+    2025-04-30**; **zero** tasks ≥ the 2026-06-25 cutoff. The PLAN's assumption
+    that SWE-rebench would supply freshly-mined post-cutoff holdout is **stale**
+    — the published dataset hasn't been updated past 2025-04. So it yields no
+    legal (post-cutoff) holdout under the plan's own definition.
+  - **Own-repo reserved bugs** (simstim/Kerf): the only remaining legal source,
+    but those repos are not in this session and `list_repos` is unavailable for
+    account-owned sessions.
+- verdict: **holdout BLOCKED — needs operator input**, binding constraint is
+  own-repo access. Unblock path: operator `add_repo`s simstim (and/or Kerf); I
+  then author reserved-bug tasks (pinned image + binary verify), 3+3 each, and
+  **stage** them in `tasks/staging/` — the operator moves them into
+  `tasks/holdout/` (guard-holdout.py blocks me by design). No holdout tasks
+  fabricated; no public-pretrained task mislabelled as post-cutoff.
+- decision-rule states this cycle: MDD n/a · dev/holdout gap n/a · kill n/a.
