@@ -96,10 +96,13 @@ def serve():
         # GDN prefill kernel, which JIT-compiles via nvcc — absent from this
         # slim pip image (crash loop). Triton JIT needs no nvcc.
         "--gdn-prefill-backend", "triton",
-        # G1 boot: skip torch.compile + cudagraph capture for a fast, robust
-        # cold start. Output is identical to compiled mode; revisit for
-        # throughput in P2 (bake nvcc / re-enable compile if worth it).
-        "--enforce-eager",
+        # P2 throughput: cudagraph + torch.compile (inductor->triton, no nvcc)
+        # remove the per-decode-step Python/launch overhead that pinned eager
+        # mode to ~15 tok/s single-stream. Cap capture sizes so cold-boot graph
+        # capture stays bounded (the reason eager was used at G1). Sampler and
+        # GDN-prefill stay on their nvcc-free backends (set above).
+        "--compilation-config",
+        '{"cudagraph_capture_sizes": [1, 2, 4, 8, 16, 32]}',
     ]
     subprocess.Popen(cmd)
 

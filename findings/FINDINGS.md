@@ -477,3 +477,28 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
 - G1 unaffected by design (serve command identical); a smoke re-confirm is
   advisable before relying on it.
 - decision-rule states: MDD n/a · dev/holdout gap n/a · kill n/a.
+
+## 2026-07-07 · P2 Throughput · run (cudagraph+compile: 13 -> 908 tok/s aggregate — G3 unblocked)
+- replaced `--enforce-eager` with `--compilation-config
+  '{"cudagraph_capture_sizes":[1,2,4,8,16,32]}'` (torch.compile inductor +
+  piecewise/full cudagraph). vLLM confirmed `enforce_eager=False`,
+  `cudagraph_mode=FULL_AND_PIECEWISE`, compiled a graph in ~48s at boot; the
+  GDN attention is in `splitting_ops` so no nvcc path is hit (triton GDN +
+  native sampler workarounds retained). Boot is slower (one-time compile) but
+  clean — no crash loop.
+- re-probe (warm, 256-tok completions):
+  - c=8: 2048 tok in **4.0s = 518 tok/s** aggregate (per-req all ~3.9s — truly
+    batched, not staggered).
+  - c=24: 6144 tok in **6.8s = 908 tok/s** aggregate (per-req all ~6.6s).
+  - vs the eager config's flat 13 tok/s: a **~70× aggregate speedup**. Warm
+    single-stream also ~2.5× (≈39 tok/s from the batch-24 per-req rate).
+- root cause recap: eager mode's per-decode-step overhead both throttled
+  single-stream AND swamped batching (the earlier "Running: 1" symptom). With
+  cudagraph the engine batches the whole fleet.
+- **cost impact — G3 is now cheap:** at 908 tok/s a 40×5 Ornith baseline is
+  ~$1 (20k tok/trial) to ~$3 (60k tok/trial) of H100 time — far under the $150
+  cap, and minutes of wall-clock. The throughput blocker is resolved; G3 can run.
+- correctness: compiled output is greedy-identical at temp 0; re-confirming the
+  G1 smoke gate next (must stay 20/20).
+- @modal.concurrent(max_inputs=64) from the prior fix is retained and is what
+  lets the fleet's requests reach the engine together.
