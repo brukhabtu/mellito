@@ -10,6 +10,7 @@ description: |
   The expected iterable return type should match input iterable type.
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 queries.test_query"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

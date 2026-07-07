@@ -341,3 +341,40 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   is wanted later, the fresh-PR-mining route (strict option) remains open.
 - decision-rule states this cycle: MDD n/a · dev/holdout gap n/a (G4 only) ·
   kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P1 Corpus · incident + fix (corpus was not eval-runnable; hidden tests now persisted)
+- session context: fresh ephemeral container. Two environment regressions logged
+  as data points (not worked around): (1) **G1 regressed to frontier** —
+  `status.py` re-runs `modal run ...::smoke` live and it exits 1 because the vLLM
+  endpoint isn't deployed in this container (the G1 PASS was a prior session's
+  live deploy; deploys don't persist). (2) **Modal auth absent** — no
+  `~/.modal.toml`, `modal profile current` = default. So no serving, no sweeps,
+  no baselines this session without an operator re-auth. (3) A probe that listed
+  the sealed holdout split was **BLOCKED by guard-holdout.py** (exit 2) — correct;
+  recorded, not circumvented. Holdout still 0/15 (operator move of the 18 staged
+  specs pending).
+- **gap found in G2 output:** the dev/staging `task.yaml` stored only the F2P
+  `verify` command, NOT the instance's `test_patch`. The determinism check
+  applied the tests itself (via the descriptor's to_broken), so admission passed
+  — but a real eval gives the worker the repo at `base_commit` with NO tests
+  visible, then must inject the hidden tests only at verdict time. Without the
+  stored tests, `verify` references tests absent from the base image → the
+  corpus was **determinism-clean yet not eval-runnable**. Confirmed on
+  django-10973: bare base + verify errored; gold-fix + tests -> PASS,
+  tests-only -> FAIL.
+- **fix:** `import_swebench.py patches` / `import_swebench_live.py patches`
+  persist each admitted task's `test_patch` as `tests.patch` beside its
+  task.yaml (from the datasets, no image re-pull) and add `hidden_tests:
+  tests.patch`. Applied to all **40 dev + 18 staged**. Verified end-to-end with
+  the STORED tests: worker-fixed+tests -> PASS, no-op+tests -> FAIL. Documented
+  the hidden-tests eval-verdict contract in tasks/schema.md and encoded it in
+  `run_trial`'s skeleton (tests injected at verdict time only, never in the
+  worker workspace — no oracle leakage).
+- net: G2 dev is now genuinely eval-ready (40 self-contained tasks). Frontier
+  remains operator-gated: **re-auth Modal** (restores G1 serving + unblocks G3
+  sweeps/baselines under the $150 cap) and **move >=15 staged specs into the
+  holdout split** (closes G2). G3 runner bodies (run_trial/run_sweep) stay
+  Phase-1 TODO — deliberately not written blind, since they can't be exercised
+  without a live endpoint (same integrity stance as the G1 smoke-body deferral).
+- decision-rule states this cycle: MDD n/a · dev/holdout gap n/a (G4 only) ·
+  kill criterion n/a (no cost/pass data yet).

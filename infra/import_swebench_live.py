@@ -166,6 +166,26 @@ def cmd_list(args):
         print(f"{r['instance_id']}\t{r['repo']}\tf2p={len(_f2p(r))}\t{r['_month']}")
 
 
+def cmd_patches(args):
+    """Persist each staged task's hidden test_patch next to task.yaml (see the
+    dev importer's `patches` for the eval-verdict contract). No image re-pull."""
+    rows = load_rows()
+    by_id = {r["instance_id"]: r for r in rows}
+    split_dir = ROOT / "tasks" / "staging"
+    n = 0
+    for tp in sorted(split_dir.glob("*/task.yaml")):
+        row = by_id.get(tp.parent.name)
+        if row is None:
+            continue
+        (tp.parent / "tests.patch").write_text(row["test_patch"])
+        text = tp.read_text()
+        if "hidden_tests:" not in text:
+            tp.write_text(text.replace(
+                "timeout_s: 1800\n", "timeout_s: 1800\nhidden_tests: tests.patch\n", 1))
+        n += 1
+    print(f"[patches] wrote hidden tests for {n} staged tasks")
+
+
 def cmd_batch(args):
     import threading
     from concurrent.futures import ThreadPoolExecutor
@@ -232,6 +252,7 @@ def main():
     b.add_argument("--workers", type=int, default=3)
     b.add_argument("--date", default="2026-07-07")
     b.set_defaults(func=cmd_batch)
+    p = sub.add_parser("patches"); p.set_defaults(func=cmd_patches)
     args = ap.parse_args()
     args.func(args)
 

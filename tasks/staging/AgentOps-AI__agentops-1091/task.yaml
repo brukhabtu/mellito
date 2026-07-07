@@ -40,6 +40,7 @@ description: |
   - [x] I'd prefer the AgentOps team to handle this update.
 verify: "cd /testbed && pytest -rA 'tests/unit/instrumentation/openai_core/test_instrumentor.py::TestOpenaiInstrumentor::test_instrument_method_wraps_response_api'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

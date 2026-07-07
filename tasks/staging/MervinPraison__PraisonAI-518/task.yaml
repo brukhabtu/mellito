@@ -16,6 +16,7 @@ description: |
   Is there a way to either reset the context for the agent/task every time the process loops or limit the context count?
 verify: "cd /testbed && pytest -rA 'tests/unit/test_context_management.py::test_context_management'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

@@ -38,6 +38,7 @@ description: |
   - [x] I've read the CONTRIBUTING guide
 verify: "cd /testbed && python -m pytest -rA 'test/integration/command/test_remote_users.py::TestUser::test_command_user_with_password_spaces'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

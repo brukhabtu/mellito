@@ -44,6 +44,7 @@ description: |
       sklearn: 0.20.0
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && pytest -rA sklearn/tests/test_base.py"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

@@ -13,6 +13,7 @@ description: |
   then fix so the full suite passes.
 verify: "pytest -x -q"      # exit 0 = pass; binary; offline; no LLM in verdict path
 timeout_s: 1800
+hidden_tests: tests.patch   # verify-time-only: the tests that define the verdict
 notes: ""                   # curator notes; never solution hints
 admitted:                   # filled by corpus-curator at admission
   determinism_check: 6/6
@@ -31,6 +32,16 @@ post-2026-06-25 tasks; see FINDINGS). It is NOT strictly post-cutoff, so its
 contamination guarantee is weaker: treat a dev/holdout gap on `held-out-public`
 tasks as a **generalization** signal (unseen repos), not a clean contamination
 verdict. Slice results by provenance so the two are never conflated.
+
+Eval-verdict contract (`hidden_tests`): the worker sees the repo at
+`base_commit` — NOT the tests. The eval runner injects `hidden_tests` (the
+instance's test_patch) only at verdict time, after the worker's patch is
+applied: reset base → apply worker patch → `git apply hidden_tests` → run
+`verify`. Exit 0 = pass. `tests.patch` lives beside `task.yaml` on the harness
+side and is never materialized into the worker's container workspace (that
+would leak the tests). Without it, `verify` references tests that don't exist
+in the base image — the corpus would pass the determinism check (which applies
+the tests itself) yet be unrunnable as an eval.
 
 Contamination checklist: see corpus-curator skill — hermeticity, 3+3
 determinism, honest provenance, split legality, solvability floor, no oracle

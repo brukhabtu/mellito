@@ -63,6 +63,7 @@ description: |
   https://www.linkedin.com/in/maciej-donajski/
 verify: "cd /testbed && poetry run pytest -rA 'tests/litellm/litellm_core_utils/test_streaming_chunk_builder_utils.py::test_cache_read_input_tokens_retained'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

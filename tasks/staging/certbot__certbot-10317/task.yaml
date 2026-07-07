@@ -15,6 +15,7 @@ description: |
   we don't currently have code that prevents this do we @jsha? should we?
 verify: "cd /testbed && pytest -rA 'acme/src/acme/_internal/tests/client_test.py::ClientV2Test::test_renewal_time_expired_cert'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

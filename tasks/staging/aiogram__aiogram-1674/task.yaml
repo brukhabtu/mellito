@@ -106,6 +106,7 @@ description: |
   - I ([Vadim-Khristenko](https://github.com/Vadim-Khristenko)) have analyzed the bug and prepared a fix for it. A Pull Request with the solution will be submitted soon.
 verify: "cd /testbed && pytest -rA 'tests/test_issues/test_1672_middleware_data_in_scene.py::test_middleware_data_passed_to_scene'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

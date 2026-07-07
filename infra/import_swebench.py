@@ -206,6 +206,34 @@ def cmd_admit(args):
         subprocess.run(["docker", "rmi", "-f", image], capture_output=True)
 
 
+def cmd_patches(args):
+    """Persist each already-admitted task's HIDDEN test_patch next to its
+    task.yaml, so the eval runner can inject the tests at verdict time without
+    the worker ever seeing them. Reads test_patch from the dataset (no image
+    re-pull) and adds `hidden_tests: tests.patch` to task.yaml. The eval verdict
+    is: apply the worker's patch -> apply hidden_tests -> run `verify`. Without
+    this file the corpus passes determinism but cannot be run as an eval (the
+    verify command references tests that only exist after test_patch)."""
+    rows = load_rows(args.parquet)
+    by_id = {r["instance_id"]: r for r in rows}
+    split_dir = ROOT / "tasks" / args.split
+    n = 0
+    for tp in sorted(split_dir.glob("*/task.yaml")):
+        iid = tp.parent.name
+        row = by_id.get(iid)
+        if row is None:
+            print(f"[patches] {iid}: not in dataset, skipped", file=sys.stderr)
+            continue
+        (tp.parent / "tests.patch").write_text(row["test_patch"])
+        text = tp.read_text()
+        if "hidden_tests:" not in text:
+            text = text.replace("timeout_s: 1800\n",
+                                "timeout_s: 1800\nhidden_tests: tests.patch\n", 1)
+            tp.write_text(text)
+        n += 1
+    print(f"[patches] wrote hidden tests for {n} tasks in tasks/{args.split}/")
+
+
 def cmd_batch(args):
     if args.split == "holdout":
         sys.exit("refused: SWE-bench is public-pretrained; holdout is dev-only.")
@@ -293,6 +321,10 @@ def main():
     b.add_argument("--workers", type=int, default=3, help="concurrent admissions")
     b.add_argument("--date", default="2026-07-07")
     b.set_defaults(func=cmd_batch)
+
+    p = sub.add_parser("patches", help="persist hidden test_patch for admitted tasks")
+    p.add_argument("--split", default="dev", choices=["dev", "staging"])
+    p.set_defaults(func=cmd_patches)
 
     args = ap.parse_args()
     args.func(args)

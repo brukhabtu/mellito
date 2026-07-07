@@ -13,6 +13,7 @@ description: |
   The MDN support grid is out of date: ​https://caniuse.com/#search=Referrer-Policy
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 project_template.test_settings"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

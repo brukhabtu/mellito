@@ -290,7 +290,13 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int) -> dic
         workspace root (the worker CLAUDE.md tells the model to use it);
       - runs the worker (Claude Code CLI against the ornith endpoint) with
         the task description;
-      - executes task_spec['verify']; the exit code is the verdict;
+      - VERDICT (hidden-tests contract, see tasks/schema.md): after the worker
+        finishes, reset to base + reapply the worker's diff, then
+        `git apply` task_spec['hidden_tests'] (the tests.patch beside task.yaml)
+        and run task_spec['verify']; the exit code is the verdict. The tests are
+        injected ONLY here — never in the worker's workspace — so the model
+        cannot read or edit them (corpus-curator item 6: no oracle leakage).
+        Verified locally that stored tests flip fail->pass for a gold fix.
       - records tokens, gpu_seconds, wall_clock, transcript;
       - an execution error is verdict='invalid', never 'fail'.
 

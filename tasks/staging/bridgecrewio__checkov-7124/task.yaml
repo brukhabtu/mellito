@@ -113,6 +113,7 @@ description: |
   Feel free to close this issue if you do not agree.
 verify: "cd /testbed && pytest -rA 'tests/terraform/checks/resource/azure/test_EventHubNamespaceZoneRedundant.py::TestEventHubNamespaceZoneRedundant::test'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6
