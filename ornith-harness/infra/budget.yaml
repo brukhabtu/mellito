@@ -1,0 +1,2 @@
+# GPU spend cap enforced by .claude/hooks/guard-budget.py
+monthly_cap_usd: 150
