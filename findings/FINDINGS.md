@@ -109,3 +109,40 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   nvcc + re-enable compile for perf, or keep eager if fast enough).
 - cost note: no ledger entry (smoke is a gate, not a sweep); GPU time was the
   cold-boot loop only. status.py still at frontier G1.
+
+## 2026-07-07 · P0 Serving · decision (G1 CLOSED — gate met)
+- goal: G1 Serving — Ornith-1.0-35B-FP8 on Modal behind an OpenAI/Anthropic-
+  compatible endpoint; `modal run infra/modal_app.py::smoke` exits 0.
+- pinned criteria & results:
+  1. endpoint serves the model, `/health` 200 — **PASS** (deployed serve,
+     `smoke: endpoint healthy`).
+  2. `smoke` exits 0 — **PASS** (exit code 0).
+  3. 20/20 trivial deterministic tasks correct — **PASS** (`trivials 20/20`).
+  4. no `<think>` leakage in any content — **PASS** (`think-leaks 0`; qwen3
+     reasoning parser strips reasoning into a separate field).
+  5. schema-clean tool call → valid Anthropic tool_use — **PASS**
+     (`tool-call schema OK`; qwen3_xml parser).
+- gate evidence: `python3 infra/status.py` → `G1 Serving [PASS] smoke suite
+  exits 0 (exit 0)` · `Frontier: G2`. (status.py re-runs smoke itself, so the
+  PASS is a fresh cold-path validation, not a cached claim.)
+- serving config that works (1×H100, vLLM 0.24.0): arch
+  Qwen3_5MoeForConditionalGeneration; `--max-model-len 32768`,
+  `--enforce-eager`, `--gdn-prefill-backend triton`,
+  `VLLM_USE_FLASHINFER_SAMPLER=0`, qwen3_xml tool parser, qwen3 reasoning
+  parser, prefix caching, bundled chat template. Two nvcc-JIT blockers found
+  and fixed (GDN prefill kernel; FlashInfer sampler) — both logged above.
+- observations for later phases: generation throughput is low (~10 tok/s in
+  eager + triton-GDN) — a P2 tuning target (bake nvcc + re-enable
+  compile/cudagraph, or measure whether eager is acceptable), not a G1 blocker.
+  Weights (35 GiB) now cached in the `ornith-weights` volume; warm boots skip
+  the download.
+- orchestration note: G1 was executed **in-session**, not via a fan-out
+  Workflow. Its units are coupled (single serving file) and culminated in one
+  supervised, iterative live-deploy debug loop (three deploy→diagnose→redeploy
+  cycles chasing nvcc/JIT issues) — not parallelizable and requiring live
+  supervision, so a worker fleet would add overhead, not coverage. The reusable
+  `.claude/workflows/milestone.js` wave orchestrator will be authored and first
+  exercised at **G2 (corpus)**, which is genuinely fan-out shaped (≥40 dev +
+  ≥15 holdout independent hermetic-task admissions through corpus-curator).
+- decision-rule states this cycle: MDD n/a (no variant comparison yet) ·
+  dev/holdout gap n/a (G4 only) · kill criterion n/a (no cost/pass data yet).
