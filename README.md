@@ -5,9 +5,10 @@ Start here: PLAN.md (goals, decision rules, **§Status**) → CLAUDE.md (working
 agreements) → findings/FINDINGS.md (project memory). Gate state:
 `python3 infra/status.py`.
 
-Status in one line (2026-07-07): G1 serving MET (compiled vLLM, ~908 tok/s
-aggregate); G2 dev MET (40 eval-ready tasks), holdout 18 staged for operator
-move; G3 measurement machinery built, first baseline pending. Details: PLAN.md
+Status in one line: G1 serving MET (compiled vLLM, ~908 tok/s); G2 dev MET (40
+eval-ready tasks), holdout 18 staged; G3 runner validated (proof-of-one PASS,
+clean mini-sweep) with the Ornith v001 baseline running. Next: the P3 scaffold
+search delta loop; hosted-Claude baselines deferred to pre-G6. Details: PLAN.md
 §Status.
 
 Fresh-container setup: run the `/modal-auth` skill (headless Modal login), then

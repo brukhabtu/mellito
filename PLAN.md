@@ -51,12 +51,27 @@ findings/FINDINGS.md. Summary of where the project stands:
   holdout is a best-effort *held-out-repos* proxy, not a strict post-cutoff set
   (weaker contamination guarantee — see tasks/schema.md). Gate closes when the
   operator moves ≥15 staged specs into tasks/holdout/.
-- **G3 Measurement — machinery built, first baseline pending.** `sweep_stats.py`
-  (per-task, paired-vs-parent, provenance slices, Wilson CI, cost) and
-  `run_sweep` are wired and unit-tested; the hidden-tests verdict path is proven
-  locally. Remaining: `run_trial`'s worker body (modal.Sandbox per task + Claude
-  Code CLI vs the endpoint), then the Ornith / Haiku 4.5 / Sonnet 5 baseline.
+- **G3 Measurement — runner validated, Ornith baseline running.** `run_trial`
+  (modal.Sandbox per task + Claude Code CLI vs the endpoint via a LiteLLM
+  Anthropic-compat proxy), `run_sweep`, and `sweep_stats.py` are built,
+  adversarially reviewed (10 confirmed bugs fixed), and validated end-to-end: a
+  proof-of-one PASS (Ornith solved django-10973 with a real source fix, 27
+  turns) and a clean 3×3 mini-sweep (0 invalid across django/pylint/astropy).
+  The full 40×5 **Ornith v001 baseline** is running.
 - **G4–G6 — not started.**
+
+### Sequencing decision (2026-07-08, operator-directed)
+
+The G3 baseline is **Ornith-only for now; the Haiku 4.5 / Sonnet 5 columns are
+deferred** to just before G6. Rationale: the highest-signal, zero-API-cost next
+step is the **base-vs-improved-Ornith delta loop** (P3 scaffold search, G4) —
+paired variants on the same self-hosted endpoint, which is what the harness is
+built for and needs no external key. The hosted-Claude baselines answer a
+different question — *did we clear the bar that justifies self-hosting?* — and
+are only needed once there's an optimized Ornith worth holding against it. The
+**north-star and the kill criterion remain stated vs Haiku 4.5 (unchanged)**;
+only *when* Haiku is measured moves. The v001 Ornith baseline is the shared
+reference for both the internal deltas and the eventual Haiku comparison.
 
 ## Decision rules (pre-committed — surface, don't re-litigate)
 
@@ -121,9 +136,13 @@ and old. Blend:
   Anthropic-compat proxy. Gate G1.
 - **P1 Corpus (days, not the week originally planned).** Import + curate per
   strategy above. Gate G2.
-- **P2 Baselines (a day of runs).** Ornith v001, Haiku 4.5, Sonnet 5 on dev;
-  full trajectory logging from run one (it is future training data). Gate G3.
-- **P3 Scaffold search (2–3 weeks; most expected gains).** Loop:
+- **P2 Baselines.** Ornith v001 on dev is the reference all deltas pair
+  against; full trajectory logging from run one (it is future training data).
+  Gate G3 closes on the Ornith baseline entry. **Haiku 4.5 / Sonnet 5 baselines
+  are deferred to pre-G6** (see §Status sequencing decision) — the external bar
+  is only needed to judge a finished Ornith, not to run the search.
+- **P3 Scaffold search (2–3 weeks; most expected gains) — the immediate next
+  priority.** Loop:
   run-eval → classify-failures → propose-mutation → operator keeps/rejects.
   Highest-leverage axis: degree of worker self-direction (Ornith's weights
   expect to write their own inner loop). Operator remains the selection step
