@@ -16,7 +16,7 @@ Fresh-container setup: run the `/modal-auth` skill (headless Modal login), then
 `infra/import_swebench.py` (dev), `infra/import_swebench_live.py` (holdout
 staging), `infra/determinism_check.py` (3+3 admission).
 
-CI: `.github/workflows/classify.yml` runs the classify-failures skill on an
+CI: the CI workflow template `infra/ci/classify.yml` (copy to `.github/workflows/`) runs the classify-failures skill on an
 eval run via the Claude Code GitHub app (read-only; Modal creds come from repo
 secrets, which reach Actions runners). Needs the app installed +
 `CLAUDE_CODE_OAUTH_TOKEN` (subscription) and `MODAL_TOKEN_ID/SECRET` secrets.

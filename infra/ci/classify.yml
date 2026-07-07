@@ -1,0 +1,80 @@
+# NOTE: copy this to .github/workflows/classify.yml to activate it.
+# It lives here because a GitHub App token cannot push files under
+# .github/workflows/ without the `workflows` permission; committing it as a
+# template keeps it version-controlled and reviewable. The operator installs it.
+#
+# Classify the failed trajectories of an eval run, in CI, with the Claude Code
+# GitHub app. This is the read-only half of the scaffold-search loop: no GPU, no
+# holdout access, no keep/reject decision (that stays with the operator). It
+# runs here because the Modal creds live in GitHub repo secrets — which reach
+# Actions runners (unlike an interactive Claude Code web session, where they
+# don't). The repo's .claude/hooks (guard-holdout, guard-budget) still apply.
+#
+# One-time setup (operator):
+#   1. Install the Claude Code GitHub app on this repo.
+#   2. Add repo secrets:
+#        MODAL_TOKEN_ID, MODAL_TOKEN_SECRET  (already present per project setup)
+#        CLAUDE_CODE_OAUTH_TOKEN             (from your Claude subscription:
+#                                            `claude setup-token` locally)
+#   3. Verify the action ref/inputs below against the app's current README —
+#      the claude-code-action schema evolves; `prompt` + `claude_code_oauth_token`
+#      are the v1 inputs at time of writing.
+#
+# The run's dir (experiments/runs/<run_id>/ with trials.jsonl + summary.json)
+# must be committed — run_sweep writes it; the transcripts themselves are pulled
+# from the Modal volume by the step below.
+name: classify-failures
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Eval run id (e.g. 20260707T215242-v001-baseline)"
+        required: true
+      all_trials:
+        description: "Pull every trial, not just fail+invalid"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Modal
+        run: pip install --quiet modal
+
+      - name: Pull failed-trial transcripts from the Modal volume
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          python3 infra/pull_transcripts.py "${{ inputs.run_id }}" \
+            ${{ inputs.all_trials && '--all' || '' }}
+
+      # Run the classify-failures skill via the Claude Code app. It reads the
+      # now-local transcripts and returns the three-way taxonomy; we ask the
+      # session to write that table to the job summary. No fixes proposed here.
+      - name: Classify failures
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Run the classify-failures skill for run ${{ inputs.run_id }}
+            (the failed-trial transcripts are already pulled locally under
+            experiments/runs/${{ inputs.run_id }}/). Then write the skill's
+            full output — the per-trial taxonomy table, the class counts overall
+            and by provenance, and the 2–3 most common failure patterns — to the
+            GitHub step summary file at $GITHUB_STEP_SUMMARY. Do not propose
+            fixes; classification only.
+          claude_args: "--allowed-tools Read,Grep,Glob,Bash(cat*),Bash(echo*)"
