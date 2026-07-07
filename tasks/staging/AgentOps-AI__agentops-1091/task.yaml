@@ -1,0 +1,47 @@
+id: AgentOps-AI__agentops-1091
+provenance: held-out-public
+source: "SWE-bench-Live 202506 · AgentOps-AI/agentops · PR#1091 · 2025-06-18"
+image: starryzhang/sweb.eval.x86_64.agentops-ai_1776_agentops-1091@sha256:35845f2cc44a6fcd98eff22c43ce98f664ae89527b3de2c394c5d9fdf09d247c
+description: |
+  [Bug]: Token Usage Extraction Across OpenAI API Endpoints
+  ### Contact Details
+  
+  _No response_
+  
+  ### 📦 Package Version
+  
+  0.4.14
+  
+  ### 🎞️ Framework Version
+  
+  _No response_
+  
+  ### 🔎 Describe the Bug
+  
+  Token usage data (prompt_tokens, completion_tokens, total_tokens) is not being consistently extracted across different OpenAI API endpoints. While some endpoints correctly capture token usage, others are missing this critical data.
+  
+  Current Behavior
+  Working Correctly:
+  - Chat Completions (non-streaming): Properly extracts all token usage
+  - Embeddings: Correctly captures prompt_tokens and total_tokens
+  - Responses API: Properly extracts all token usage
+  
+  Not Working :
+  - Streaming Chat Completions
+  - Image Generation
+  - Assistants API
+  
+  [Example script](https://gist.github.com/Dwij1704/f4b3a9c1d34f3a956d0abfd7b7dffe39)
+  
+  ### 🤝 Contribution
+  
+  - [ ] Yes, I'd be happy to submit a pull request with these changes.
+  - [ ] I need some guidance on how to contribute.
+  - [x] I'd prefer the AgentOps team to handle this update.
+verify: "cd /testbed && pytest -rA 'tests/unit/instrumentation/openai_core/test_instrumentor.py::TestOpenaiInstrumentor::test_instrument_method_wraps_response_api'"
+timeout_s: 1800
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

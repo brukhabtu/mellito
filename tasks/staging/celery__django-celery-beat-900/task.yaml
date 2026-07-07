@@ -1,0 +1,19 @@
+id: celery__django-celery-beat-900
+provenance: held-out-public
+source: "SWE-bench-Live 202505 · celery/django-celery-beat · PR#900 · 2025-05-16"
+image: starryzhang/sweb.eval.x86_64.celery_1776_django-celery-beat-900@sha256:2b55599553c3ba4cbf96e4333e8a565dcdf28eec9d42da7b2f34a4e1c02f0833
+description: |
+  REGEXP_LIKE incompatible with SQL Server
+  There's a single use of __regex filter introduced in https://github.com/celery/django-celery-beat/commit/87c059706506994f677e82426c80028ad9894af1 which breaks celery-beat when using SQL Server. 
+  * #879
+  
+  https://learn.microsoft.com/en-us/sql/t-sql/functions/regexp-like-transact-sql?view=azuresqldb-current states that COMPATIBILITY_LEVEL 170 is required for that function to work. That level is not available (at least not for most versions)!
+  
+  ![Image](https://github.com/user-attachments/assets/6270bad4-1829-4ced-9114-98844e674cf1)
+verify: "cd /testbed && pytest -rA 't/unit/test_schedulers.py::test_DatabaseScheduler::test_scheduler_valid_hours'"
+timeout_s: 1800
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

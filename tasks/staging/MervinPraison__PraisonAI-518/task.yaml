@@ -1,0 +1,23 @@
+id: MervinPraison__PraisonAI-518
+provenance: held-out-public
+source: "SWE-bench-Live 202505 · MervinPraison/PraisonAI · PR#518 · 2025-05-27"
+image: starryzhang/sweb.eval.x86_64.mervinpraison_1776_praisonai-518@sha256:496a34ee50b2d85fc5d898fa5ce2383823b17754090c7fb917e00aec0b618a2d
+description: |
+  How to reset task context while running workflow
+  Hello,
+  I have a workflow where a sequence of tasks are called repeatedly in a loop until a decision task decides to terminate the process:
+  [task 1] -> [task 2] -> [decision task] -> repeat [task 2] or terminate process
+  
+  I have a problem with context length exceeding the allowed limit.
+  After taking a look at the instructions, I noticed that the message "input data from previous tasks" followed by task results was getting appended to the context for every cycle.
+  In other words, task results from previous cycles gets appended to the context every time the task is executed.
+  
+  In order to reduce the context length, I wanted to pass only the most recent task results.
+  Is there a way to either reset the context for the agent/task every time the process loops or limit the context count?
+verify: "cd /testbed && pytest -rA 'tests/unit/test_context_management.py::test_context_management'"
+timeout_s: 1800
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

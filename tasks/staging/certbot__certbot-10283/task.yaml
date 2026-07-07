@@ -1,0 +1,54 @@
+id: certbot__certbot-10283
+provenance: held-out-public
+source: "SWE-bench-Live 202505 · certbot/certbot · PR#10283 · 2025-05-06"
+image: starryzhang/sweb.eval.x86_64.certbot_1776_certbot-10283@sha256:e6030da7cd316d93d49d815986759871327a0f3c3bfe00a92a9a187b45d32765
+description: |
+  [Bug]: acme.errors.ValidationError provides no information
+  ### OS
+  
+  Fedora 41
+  
+  ### Installation method
+  
+  DNF
+  
+  ### Certbot Version
+  
+  python3-acme-3.1.0-1.fc41.noarch
+  
+  ### What happened?
+  
+  I am using `python3-acme` in a Let's Encrypt client of my own creation — https://github.com/ipilcher/acg — and I have recently been receiving this error.
+  
+  ```
+  Traceback (most recent call last):
+    File "/usr/local/bin/acg", line 303, in <module>
+      main()
+      ~~~~^^
+    File "/usr/local/bin/acg", line 295, in main
+      cert = execute_challenge(client, csr, args.hostname)
+    File "/usr/local/bin/acg", line 242, in execute_challenge
+      order = client.poll_and_finalize(order)
+    File "/usr/lib/python3.13/site-packages/acme/client.py", line 189, in poll_and_finalize
+      orderr = self.poll_authorizations(orderr, deadline)
+    File "/usr/lib/python3.13/site-packages/acme/client.py", line 214, in poll_authorizations
+      raise errors.ValidationError(failed)
+  acme.errors.ValidationError
+  ```
+  
+  ### Expected behavior
+  
+  The error message in the traceback should include some indication of the nature of the error.
+  
+  ### Relevant log output
+  
+  ```shell
+  
+  ```
+verify: "cd /testbed && source venv/bin/activate && python -m pytest -rA 'acme/src/acme/_internal/tests/errors_test.py::ValidationErrorTest::test_repr'"
+timeout_s: 1800
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

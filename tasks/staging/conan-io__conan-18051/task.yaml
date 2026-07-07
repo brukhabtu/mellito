@@ -1,0 +1,34 @@
+id: conan-io__conan-18051
+provenance: held-out-public
+source: "SWE-bench-Live 202504 · conan-io/conan · PR#18051 · 2025-04-01"
+image: starryzhang/sweb.eval.x86_64.conan-io_1776_conan-18051@sha256:bcf8ac83cb41ed84b3f6ebf189d41f4fd1426f41a275fe83a93195199019d254
+description: |
+  [bug] XCode 16.3 apple-clang 17 support is missing
+  ### Describe the bug
+  
+  MacOSX 15.3.2, XCode 16.3, Conan 2.15.0
+  
+  [settings]
+  arch=armv8
+  build_type=Release
+  compiler=apple-clang
+  compiler.cppstd=gnu17
+  compiler.libcxx=libc++
+  compiler.version=17
+  os=Macos
+  
+  ### How to reproduce it
+  
+  1. Update XCode to the newest 16.3
+  2. Start conan install . --build
+  3. An error received:
+  
+  ERROR: Invalid setting '17' is not a valid 'settings.compiler.version' value.
+  Possible values are ['5.0', '5.1', '6.0', '6.1', '7.0', '7.3', '8.0', '8.1', '9.0', '9.1', '10.0', '11.0', '12.0', '13', '13.0', '13.1', '14', '14.0', '15', '15.0', '16', '16.0']
+verify: "cd /testbed && pytest -rA 'test/unittests/client/build/cpp_std_flags_test.py::CompilerFlagsTest::test_apple_clang_cppstd_defaults'"
+timeout_s: 1800
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py

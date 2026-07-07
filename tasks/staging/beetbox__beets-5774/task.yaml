@@ -1,0 +1,45 @@
+id: beetbox__beets-5774
+provenance: held-out-public
+source: "SWE-bench-Live 202505 · beetbox/beets · PR#5774 · 2025-05-11"
+image: starryzhang/sweb.eval.x86_64.beetbox_1776_beets-5774@sha256:ae3c69e995b90f0da428c0e60b7a4d5da94e71b3d38952d78e7b38cba6c9854d
+description: |
+  beets 2.3 doesn't like dots in the filename patterns
+  <!--
+  Describe your problem, feature request, or discussion topic here.
+  
+  Please fill out this and the "Setup" section below and remember to include
+  enough detail so that other people can reproduce the problem.
+  -->
+  
+  ### Problem
+  
+  Running `beet import` on any album with
+  ```yaml
+  paths:
+      default: $albumartist/$album%aunique{}/$track. $title
+  ```
+  in the configuration results in filenames like `01.flac`, i.e. everything after the dot is missing.
+  
+  ### Investigation
+  
+  Looking for "path" in the git log brings up the very recently merged #5224, which introduced `os.path.splitext` in https://github.com/beetbox/beets/blob/master/beets/util/__init__.py#L767 and adding some `print`s for `path`, `first_stage` and `second_stage` shows what happens when you also change the configuration to
+  ```yaml
+  paths:
+      default: $albumartist/$album%aunique{}/$track. $title.x.y
+  ```
+  `path` is the filename *without* extension, `first_stage` removes the `.y`, and `second_stage` the `.x`.
+  
+  ### Solutions?
+  
+  Not sure. The above config is a workaround, adding a `+suffix` to the path passed to the three `_legalize_stage` calls kinda works but shows
+  ```
+  Fell back to default replacements when naming file Artist/Album/01. Title.x.y. Configure replacements to avoid lengthening the filename.
+  ```
+  Anyway, something in there expects a filename containing a dot to have an extension, but the filename used doesn't have the extension added.
+verify: "cd /testbed && poetry run pytest -rA 'test/test_util.py::TestPathLegalization::test_truncate[persist-dot-in-filename]'"
+timeout_s: 1800
+notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
+admitted:
+  determinism_check: 6/6
+  date: 2026-07-07
+  by: import_swebench_live.py
