@@ -106,6 +106,10 @@ def by_provenance(per_task_stats: dict) -> dict:
 def cost(results: list, usd_per_gpu_hour: float) -> dict:
     gpu_s = sum(r.get("gpu_seconds", 0.0) for r in results)
     usd = gpu_s / 3600.0 * usd_per_gpu_hour
+    # API dollars (claude-* workers). GPU spend and API spend are disjoint by
+    # construction — a trial attributes to one path or the other — so total cost
+    # per solved task folds both.
+    api_usd = sum(r.get("api_usd", 0.0) for r in results)
     solved_tasks = sum(1 for s in per_task(results).values() if _solved(s))
     tin = sum(r.get("tokens_in", 0) for r in results)
     tout = sum(r.get("tokens_out", 0) for r in results)
@@ -113,7 +117,11 @@ def cost(results: list, usd_per_gpu_hour: float) -> dict:
     return {
         "gpu_seconds": round(gpu_s, 1),
         "usd": round(usd, 4),
-        "usd_per_solved_task": round(usd / solved_tasks, 4) if solved_tasks else None,
+        "api_usd": round(api_usd, 4),
+        "usd_per_solved_task": round((usd + api_usd) / solved_tasks, 4)
+        if solved_tasks else None,
+        # How the two spend figures are derived, for the operator reading a run.
+        "gpu_attribution": {"per_trial": "tokens_out/908", "ledger": "max(sum, wall)"},
         "tokens_in": tin, "tokens_out": tout,
         "trials": len(results), "valid_trials": len(valid),
         "invalid_trials": len(results) - len(valid),
@@ -123,12 +131,13 @@ def cost(results: list, usd_per_gpu_hour: float) -> dict:
 
 
 def summarize(run_id: str, variant: str, parent: str | None, results: list,
-              parent_per_task: dict | None, usd_per_gpu_hour: float) -> dict:
+              parent_per_task: dict | None, usd_per_gpu_hour: float,
+              worker_model: str | None = None) -> dict:
     pt = per_task(results)
     solved = sum(1 for s in pt.values() if _solved(s))
     valid_tasks = sum(1 for s in pt.values() if s["valid"])
     lo, hi = _wilson(solved, valid_tasks)
-    return {
+    out = {
         "run_id": run_id, "variant": variant, "parent": parent,
         "tasks": len(pt), "valid_tasks": valid_tasks,
         "solved_tasks": solved,
@@ -141,6 +150,9 @@ def summarize(run_id: str, variant: str, parent: str | None, results: list,
                          "invalid": v["invalid"], "pass_rate": v["pass_rate"],
                          "provenance": v["provenance"]} for k, v in pt.items()},
     }
+    if worker_model is not None:
+        out["worker_model"] = worker_model
+    return out
 
 
 def write_summary(run_dir: Path, summary: dict) -> Path:

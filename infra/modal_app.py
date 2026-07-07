@@ -10,17 +10,26 @@ Phase 0 work. Everything cost- or verdict-bearing is code here, never model
 procedure — the runner writes runs/, summary.json, and cost-ledger.csv itself.
 """
 
+import io
 import json
+import os
+import re
 import subprocess
+import tarfile
 import time
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import modal
 
 MODEL = "deepreinforce-ai/Ornith-1.0-35B-FP8"
 GPU = "H100"
 MINUTES = 60
+
+# Static, non-secret master key for the in-app LiteLLM proxy. The proxy only
+# fronts the (already private) vLLM endpoint; this key gates the proxy port, it
+# is not a provider credential, so it lives in code by design.
+PROXY_MASTER_KEY = "sk-ornith-harness"
 
 app = modal.App("ornith-harness")
 
@@ -105,6 +114,63 @@ def serve():
         '{"cudagraph_capture_sizes": [1, 2, 4, 8, 16, 32]}',
     ]
     subprocess.Popen(cmd)
+
+
+# --- Anthropic-compat proxy ----------------------------------------------
+
+# Claude Code speaks the Anthropic /v1/messages schema; vLLM (serve()) speaks
+# the OpenAI schema. LiteLLM's proxy is the field-rename bridge between them.
+# Pinned to the newest stable release at build time (1.91.0; checked against
+# PyPI). Bump only in a `harness:` commit.
+proxy_image = modal.Image.debian_slim(python_version="3.12").pip_install(
+    "litellm[proxy]==1.91.0"
+)
+
+
+@app.function(image=proxy_image, scaledown_window=300, timeout=60 * MINUTES)
+# One proxy container fans many concurrent worker requests onto the shared vLLM
+# fleet; match serve()'s concurrency so the proxy is never the bottleneck.
+@modal.concurrent(max_inputs=64)
+@modal.web_server(port=4000, startup_timeout=5 * MINUTES)
+def proxy():
+    """LiteLLM proxy exposing an Anthropic-format endpoint backed by vLLM.
+
+    Resolves serve()'s deployed URL at boot and writes a one-model config
+    routing Anthropic requests for `ornith-35b` to `openai/ornith-35b` at
+    serve()/v1. drop_params tolerates Anthropic-only fields vLLM doesn't accept.
+    """
+    serve_url = _serve_url()
+    config = {
+        "model_list": [
+            {
+                "model_name": "ornith-35b",
+                "litellm_params": {
+                    "model": "openai/ornith-35b",
+                    "api_base": f"{serve_url}/v1",
+                    "api_key": "dummy",
+                },
+            }
+        ],
+        "litellm_settings": {"drop_params": True},
+    }
+    import yaml
+    Path("/root/litellm_config.yaml").write_text(yaml.safe_dump(config))
+    subprocess.Popen(
+        ["litellm", "--config", "/root/litellm_config.yaml",
+         "--port", "4000", "--host", "0.0.0.0"],
+        env={**os.environ, "LITELLM_MASTER_KEY": PROXY_MASTER_KEY},
+    )
+
+
+def _proxy_url() -> str:
+    import modal as _modal
+    fn = _modal.Function.from_name("ornith-harness", "proxy")
+    for attr in ("get_web_url", "web_url"):
+        v = getattr(fn, attr, None)
+        url = v() if callable(v) else v
+        if url:
+            return url.rstrip("/")
+    raise SystemExit("proxy: could not resolve proxy() web URL — is it deployed?")
 
 
 # --- G1 smoke suite -------------------------------------------------------
@@ -290,39 +356,248 @@ def smoke():
     print("smoke: PASS (20/20 trivials, 0 think-leaks, schema-clean tool call)")
 
 
-@app.function(image=vllm_image, volumes={"/runs": runs_vol}, timeout=120 * MINUTES)
-def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int) -> dict:
+# run_trial only orchestrates sandboxes (the task container is where code
+# actually runs); it needs no GPU/vLLM, so a slim image keeps its cold start
+# small. trial_logic ships as local source so the pure verdict/parse/env logic
+# is importable in the container.
+harness_image = modal.Image.debian_slim(python_version="3.12").add_local_python_source(
+    "trial_logic"
+)
+
+
+def _create_sandbox(app_handle, **kwargs):
+    """Sandbox.create with one 30s-backoff retry — sandbox creation is the most
+    common transient failure (image pull, scheduler). Raises on final failure;
+    the caller maps that to an invalid verdict, never a 'fail'."""
+    last = None
+    for attempt in range(2):
+        try:
+            return modal.Sandbox.create(app=app_handle, **kwargs)
+        except Exception as e:  # transient scheduler/pull error
+            last = e
+            if attempt == 0:
+                time.sleep(30)
+    raise last
+
+
+def _sb_write(sb, path: str, content) -> None:
+    """Write a file into a running sandbox (text or bytes), creating parents."""
+    sb.exec("mkdir", "-p", str(PurePosixPath(path).parent)).wait()
+    mode = "wb" if isinstance(content, (bytes, bytearray)) else "w"
+    with sb.open(path, mode) as f:
+        f.write(content)
+
+
+def _write_verdict(out_dir: Path, verdict: str, exit_code, stderr_tail: str,
+                   base_sha: str, reason: str) -> None:
+    (out_dir / "verdict.json").write_text(json.dumps({
+        "verdict": verdict, "exit_code": exit_code,
+        "stderr_tail": (stderr_tail or "")[-2000:],
+        "base_sha": base_sha, "reason": reason,
+    }, indent=2))
+
+
+@app.function(image=harness_image, volumes={"/runs": runs_vol},
+              timeout=120 * MINUTES, max_containers=24)
+def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
+              run_id: str, worker: dict) -> dict:
     """One task x one trial, inside the task's pinned container.
 
     Invariants this function owns (not the model, not the skill):
-      - materializes variant claude-config/ as .claude/ INSIDE the task
-        workspace only, and writes task_spec['verify'] to VERIFY.txt at the
-        workspace root (the worker CLAUDE.md tells the model to use it);
-      - runs the worker (Claude Code CLI against the ornith endpoint) with
-        the task description;
-      - VERDICT (hidden-tests contract, see tasks/schema.md): after the worker
-        finishes, reset to base + reapply the worker's diff, then
-        `git apply` task_spec['hidden_tests'] (the tests.patch beside task.yaml)
-        and run task_spec['verify']; the exit code is the verdict. The tests are
-        injected ONLY here — never in the worker's workspace — so the model
-        cannot read or edit them (corpus-curator item 6: no oracle leakage).
-        Verified locally that stored tests flip fail->pass for a gold fix.
-      - records tokens, gpu_seconds, wall_clock, transcript;
+      - PHASE A (worker): derive the task image + Node/Claude-Code, materialize
+        variant claude-config/ as .claude/ INSIDE the task workspace only, write
+        task_spec['verify'] to VERIFY.txt and the description to TASK.md, then
+        run the worker (Claude Code CLI against `worker`'s endpoint). The
+        worker's change is captured as a git diff that EXCLUDES the harness
+        scaffolding (.claude, VERIFY.txt, TASK.md).
+      - PHASE B (verdict, hidden-tests contract, see tasks/schema.md): in a
+        FRESH raw task container with the network blocked, `git apply` the
+        worker diff, then `git apply` task_spec['hidden_tests'] (injected ONLY
+        here — the worker never sees the tests, corpus-curator item 6: no oracle
+        leakage), then run task_spec['verify']; its exit code is the verdict.
+      - records tokens, gpu_seconds, api_usd, wall_clock, transcript, verdict;
       - an execution error is verdict='invalid', never 'fail'.
-
-    TODO(phase0/1): implement against the task container runtime.
     """
+    from modal.exception import ExecTimeoutError
+    import trial_logic as tl
+
     started = time.time()
-    return {
-        "task": task_spec.get("id"),
-        "trial": trial_idx,
-        "verdict": "invalid",
-        "error": "run_trial not implemented",
-        "wall_clock_s": round(time.time() - started, 2),
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "gpu_seconds": 0.0,
-    }
+    task_id = task_spec["id"]
+    timeout_s = int(task_spec.get("timeout_s", 1800))
+    description = task_spec.get("description", "")
+    out_dir = Path("/runs") / run_id / task_id / f"trial{trial_idx}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    transcript_path = out_dir / "transcript.jsonl"
+    app_handle = modal.App.lookup("ornith-harness")
+
+    def _result(verdict, reason, usage=None, timed_out=False, error=None):
+        usage = usage or {}
+        tokens_out = usage.get("tokens_out", 0)
+        res = {
+            "task": task_id, "trial": trial_idx,
+            "verdict": verdict, "reason": reason,
+            "wall_clock_s": round(time.time() - started, 2),
+            "tokens_in": usage.get("tokens_in", 0),
+            "tokens_out": tokens_out,
+            # GPU-seconds only attributed to the ornith path (shared vLLM
+            # fleet); claude-* spend is API dollars, tracked separately.
+            "gpu_seconds": (tokens_out / tl.AGG_TOK_PER_S) if worker.get("base_url") else 0.0,
+            "api_usd": usage.get("api_usd", 0.0),
+            "transcript_path": str(transcript_path.relative_to("/runs")),
+            "timed_out": timed_out,
+            "num_turns": usage.get("num_turns", 0),
+        }
+        if error:
+            res["error"] = error
+        runs_vol.commit()
+        return res
+
+    # Oracle-leak guard: the variant config must never carry the hidden tests.
+    for m in tarfile.open(fileobj=io.BytesIO(variant_config_tar), mode="r:gz").getmembers():
+        if "tests.patch" in m.name:
+            raise RuntimeError(
+                f"variant config contains {m.name!r} — refusing (oracle leak guard)")
+
+    # claude-* workers need a real Anthropic key; it lives in a Modal secret and
+    # is injected into the sandbox container env (not the orchestrator), so
+    # ornith-only runs need no secret at all. The exec env drops its placeholder
+    # ANTHROPIC_API_KEY so the container's real key wins.
+    worker_secrets = None
+    exec_env = tl.worker_env(worker)
+    if not worker.get("base_url"):
+        worker_secrets = [modal.Secret.from_name(
+            "anthropic-api-key", required_keys=["ANTHROPIC_API_KEY"])]
+        exec_env.pop("ANTHROPIC_API_KEY", None)
+
+    worker_img = modal.Image.from_registry(task_spec["image"]).run_commands(
+        *tl.node_claude_install_cmds())
+    raw_img = modal.Image.from_registry(task_spec["image"])
+
+    base_sha = ""
+    worker_diff = None
+    usage = {}
+    timed_out = False
+
+    # --- Phase A: worker (with one full-phase retry on a missing result line) ---
+    for phase_attempt in range(2):
+        sb = None
+        try:
+            try:
+                sb = _create_sandbox(app_handle, image=worker_img,
+                                     timeout=timeout_s + 600, workdir="/testbed",
+                                     cpu=2, secrets=worker_secrets)
+            except Exception as e:
+                return _result("invalid", "worker_sandbox_create_failed",
+                               error=f"sandbox create failed: {e}")
+
+            base_sha = sb.exec("git", "rev-parse", "HEAD",
+                               workdir="/testbed").stdout.read().strip()
+
+            _sb_write(sb, "/tmp/cfg.tgz", variant_config_tar)
+            sb.exec("bash", "-lc",
+                    "mkdir -p /testbed/.claude /tmp/cfgx && "
+                    "tar -xzf /tmp/cfg.tgz -C /tmp/cfgx && "
+                    "cp -a /tmp/cfgx/claude-config/. /testbed/.claude/").wait()
+            _sb_write(sb, "/testbed/VERIFY.txt", task_spec["verify"])
+            _sb_write(sb, "/testbed/TASK.md", description)
+
+            lines: list[str] = []
+            timed_out = False
+            buf = ""
+            proc = sb.exec(
+                "claude", "-p", description,
+                "--output-format", "stream-json", "--verbose",
+                "--dangerously-skip-permissions", "--max-turns", "150",
+                env=exec_env, timeout=timeout_s, workdir="/testbed")
+            with open(transcript_path, "w") as tfp:
+                try:
+                    for chunk in proc.stdout:
+                        buf += chunk
+                        while "\n" in buf:
+                            ln, buf = buf.split("\n", 1)
+                            tfp.write(ln + "\n")
+                            lines.append(ln)
+                except ExecTimeoutError:  # worker ran past the task budget
+                    timed_out = True
+                finally:
+                    if buf:
+                        tfp.write(buf + "\n")
+                        lines.append(buf)
+
+            usage = tl.parse_stream_json(lines)
+
+            # No terminating result line and not a timeout => the CLI died
+            # abnormally; retry the whole worker phase once, then invalid.
+            if not usage["found_result"] and not timed_out:
+                if phase_attempt == 0:
+                    continue
+                return _result("invalid", "worker_no_result_line", usage=usage,
+                               timed_out=timed_out,
+                               error="worker produced no result line")
+
+            # Capture the worker's change, excluding harness scaffolding.
+            sb.exec("git", "add", "-A", "--",
+                    ":(exclude).claude", ":(exclude)VERIFY.txt", ":(exclude)TASK.md",
+                    workdir="/testbed").wait()
+            dproc = sb.exec("git", "diff", "--binary", "--cached", base_sha,
+                            workdir="/testbed")
+            worker_diff = dproc.stdout.read()
+            (out_dir / "worker.diff").write_text(worker_diff)
+            break
+        finally:
+            if sb is not None:
+                try:
+                    sb.terminate()
+                except Exception:
+                    pass
+
+    if not worker_diff or not worker_diff.strip():
+        return _result("fail", "empty_diff", usage=usage, timed_out=timed_out)
+
+    # --- Phase B: verdict, in a fresh raw container with the network blocked ---
+    vsb = None
+    try:
+        try:
+            vsb = _create_sandbox(app_handle, image=raw_img, block_network=True,
+                                  timeout=timeout_s + 300, workdir="/testbed", cpu=2)
+        except Exception as e:
+            return _result("invalid", "verdict_sandbox_create_failed",
+                           usage=usage, timed_out=timed_out,
+                           error=f"verdict sandbox create failed: {e}")
+
+        _sb_write(vsb, "/tmp/worker.diff", worker_diff)
+        _sb_write(vsb, "/tmp/tests.patch", task_spec.get("hidden_tests_content") or "")
+
+        rc = vsb.exec("git", "apply", "--whitespace=nowarn", "/tmp/worker.diff",
+                      workdir="/testbed").wait()
+        if rc != 0:
+            _write_verdict(out_dir, "invalid", rc, "", base_sha, "worker_diff_apply_failed")
+            return _result("invalid", "worker_diff_apply_failed", usage=usage,
+                           timed_out=timed_out)
+
+        rc = vsb.exec("git", "apply", "/tmp/tests.patch", workdir="/testbed").wait()
+        if rc != 0:
+            _write_verdict(out_dir, "invalid", rc, "", base_sha, "hidden_tests_apply_failed")
+            return _result("invalid", "hidden_tests_apply_failed", usage=usage,
+                           timed_out=timed_out)
+
+        vproc = vsb.exec("bash", "-lc", task_spec["verify"],
+                         timeout=timeout_s, workdir="/testbed")
+        try:
+            err_tail = vproc.stderr.read()
+            exit_code = vproc.wait()
+            verdict, reason = ("pass", "verify_exit_zero") if exit_code == 0 \
+                else ("fail", "verify_exit_nonzero")
+        except ExecTimeoutError:
+            verdict, reason, exit_code, err_tail = "fail", "verify_timeout", None, ""
+        _write_verdict(out_dir, verdict, exit_code, err_tail, base_sha, reason)
+        return _result(verdict, reason, usage=usage, timed_out=timed_out)
+    finally:
+        if vsb is not None:
+            try:
+                vsb.terminate()
+            except Exception:
+                pass
 
 
 H100_USD_PER_HOUR = 3.95  # Modal H100 list rate; the ledger is the source of truth
@@ -364,13 +639,48 @@ def _parent_per_task(parent: str | None, root: Path) -> dict | None:
             for t, v in summ.get("per_task", {}).items()}
 
 
+def _slug(s: str) -> str:
+    """Filesystem-safe slug for a model name (for run_id suffixes)."""
+    return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
+
+
+def _make_worker(worker_model: str) -> dict:
+    """worker dict consumed by run_trial. ornith-35b routes through the in-app
+    LiteLLM proxy (GPU-attributed); claude-* talks to the real Anthropic API
+    (base_url None -> api.anthropic.com; key from the Modal secret)."""
+    if worker_model == "ornith-35b":
+        return {"model": "ornith-35b", "small_model": "ornith-35b",
+                "base_url": _proxy_url(), "api_key": PROXY_MASTER_KEY}
+    return {"model": worker_model,
+            "small_model": "claude-haiku-4-5-20251001", "base_url": None}
+
+
+def _probe_proxy(url: str) -> None:
+    """Best-effort liveliness probe of the LiteLLM proxy (it serves
+    /health/liveliness). Raises on non-200 so the caller can warn."""
+    import urllib.request
+    req = urllib.request.Request(
+        f"{url}/health/liveliness",
+        headers={"Authorization": f"Bearer {PROXY_MASTER_KEY}"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        if r.status != 200:
+            raise RuntimeError(f"proxy liveliness status {r.status}")
+
+
 @app.local_entrypoint()
-def run_sweep(variant: str, trials: int = 5, split: str = "dev"):
+def run_sweep(variant: str, trials: int = 5, split: str = "dev",
+              worker_model: str = "ornith-35b", tasks: str = ""):
     """Fan a variant out across the task set; write runs/<run_id>/ and append
     the cost ledger. Holdout runs require the operator's .holdout-unlocked
     flow upstream — this entrypoint refuses split='holdout' unless the flag
-    file exists, as defense in depth."""
+    file exists, as defense in depth.
+
+    worker_model selects the coding model: 'ornith-35b' (the subject; served
+    via the in-app vLLM+proxy stack, GPU-budget-gated) or a hosted 'claude-*'
+    reference model (real Anthropic API spend, NOT budget-hook-gated).
+    tasks: optional comma-separated task-id filter (partial run)."""
     import sys
+    import time as _time
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "infra"))
     import sweep_stats as stats
@@ -387,33 +697,113 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev"):
     import yaml
     parent = yaml.safe_load(manifest.read_text()).get("parent")
 
+    is_ornith = worker_model == "ornith-35b"
+    if not is_ornith:
+        # A hosted Claude worker burns real Anthropic API dollars, which the
+        # budget hook does NOT gate. Require an explicit mechanical ack.
+        print("WARNING: worker_model is a hosted Claude model. This spends real "
+              "Anthropic API dollars the budget hook does NOT gate, and requires "
+              "the 'anthropic-api-key' Modal secret to hold a real key "
+              "(modal secret create anthropic-api-key ANTHROPIC_API_KEY=sk-...).")
+        if os.environ.get("RUN_SWEEP_API_OK") != "1":
+            raise SystemExit("refusing claude-* sweep without RUN_SWEEP_API_OK=1")
+
     task_dirs = sorted((root / "tasks" / split).glob("*/task.yaml"))
     if not task_dirs:
         raise SystemExit(f"no tasks in tasks/{split}/")
     specs = [_load_spec(d) for d in task_dirs]
+
+    partial = bool(tasks.strip())
+    if partial:
+        wanted = {t.strip() for t in tasks.split(",") if t.strip()}
+        specs = [s for s in specs if s["id"] in wanted]
+        if not specs:
+            raise SystemExit(f"no tasks in tasks/{split}/ match {sorted(wanted)}")
+
     cfg_tar = _tar_config(variant_dir)
+    worker = _make_worker(worker_model)
 
-    run_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{variant}"
+    ts = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
+    run_id = f"{ts}-{variant}" if is_ornith else f"{ts}-{variant}-{_slug(worker_model)}"
+    if partial:
+        run_id += "-partial"
+
     print(f"[sweep] {run_id}: {len(specs)} tasks x {trials} trials "
-          f"({len(specs) * trials} trials), variant {variant} (parent {parent})")
+          f"({len(specs) * trials} trials), variant {variant} (parent {parent}) "
+          f"worker {worker_model}")
 
-    work = [(spec, cfg_tar, t) for spec in specs for t in range(trials)]
+    if is_ornith:
+        _wait_healthy(_serve_url())
+        try:
+            _probe_proxy(_proxy_url())
+        except Exception as e:  # best-effort; the per-trial calls will surface it
+            print(f"[sweep] proxy health probe failed (continuing): {e}")
+
+    work = [(spec, cfg_tar, t, run_id, worker) for spec in specs for t in range(trials)]
     prov = {s["id"]: s.get("provenance") for s in specs}
+
+    sweep_start = _time.time()
     results = []
     for r in run_trial.starmap(work):
         r["provenance"] = prov.get(r.get("task"))
         results.append(r)
+    sweep_wall_s = _time.time() - sweep_start
+
+    run_dir = root / "experiments" / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    # Write the raw trials BEFORE summarize so a summarize bug can't lose data.
+    with (run_dir / "trials.jsonl").open("w") as f:
+        for r in results:
+            f.write(json.dumps(r) + "\n")
 
     summary = stats.summarize(run_id, variant, parent, results,
-                              _parent_per_task(parent, root), H100_USD_PER_HOUR)
-    run_dir = root / "experiments" / "runs" / run_id
+                              _parent_per_task(parent, root), H100_USD_PER_HOUR,
+                              worker_model=worker_model)
     stats.write_summary(run_dir, summary)
+
+    # Ledger charges GPU time: the larger of summed per-trial attribution and
+    # the sweep wall clock (ornith only — the vLLM fleet bills by wall time).
+    gpu_seconds_ledger = max(
+        sum(r.get("gpu_seconds", 0.0) for r in results),
+        sweep_wall_s if is_ornith else 0.0)
+    usd_ledger = gpu_seconds_ledger / 3600.0 * H100_USD_PER_HOUR
     stats.append_ledger(root / "findings" / "cost-ledger.csv", run_id,
                         f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%S}",
-                        summary["cost"]["gpu_seconds"], summary["cost"]["usd"])
+                        gpu_seconds_ledger, usd_ledger)
 
     c, p = summary["cost"], summary["paired_vs_parent"]
     print(f"[sweep] {run_id}: solved {summary['solved_tasks']}/{summary['valid_tasks']} "
           f"tasks (rate {summary['pass_rate_over_tasks']}) · paired vs {parent}: "
           f"+{p['wins']}/-{p['losses']}/={p['ties']} net {p['net_tasks']} · "
-          f"${c['usd']} ({c['invalid_trials']} invalid) · runs/{run_id}/summary.json")
+          f"${c['usd']} gpu + ${c.get('api_usd', 0.0)} api "
+          f"({c['invalid_trials']} invalid) · runs/{run_id}/summary.json")
+
+
+@app.local_entrypoint()
+def run_one(task_id: str, variant: str = "v001-baseline",
+            worker_model: str = "ornith-35b"):
+    """One task x one trial, for exercising the runner end-to-end (the
+    proof-of-one). Writes NOTHING to experiments/runs/ or the ledger — the trial
+    still writes its own transcript/diff/verdict to the /runs volume — and prints
+    the result dict as JSON. Refuses to reach into sealed holdout."""
+    root = Path(__file__).resolve().parent.parent
+    variant_dir = root / "experiments" / "variants" / variant
+    if not (variant_dir / "manifest.yaml").exists():
+        raise SystemExit(f"no such variant: {variant}")
+
+    spec = None
+    for split in ("dev", "staging"):
+        d = root / "tasks" / split / task_id
+        if (d / "task.yaml").exists():
+            spec = _load_spec(d)
+            break
+    if spec is None:
+        raise SystemExit(f"task not found in dev/ or staging/: {task_id}")
+
+    cfg_tar = _tar_config(variant_dir)
+    worker = _make_worker(worker_model)
+    if worker_model == "ornith-35b":
+        _wait_healthy(_serve_url())
+    ts = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
+    result = run_trial.remote(spec, cfg_tar, 0, f"one-{ts}-{task_id}", worker)
+    print(json.dumps(result, indent=2))
