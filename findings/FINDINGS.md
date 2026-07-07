@@ -498,7 +498,8 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
 - **cost impact — G3 is now cheap:** at 908 tok/s a 40×5 Ornith baseline is
   ~$1 (20k tok/trial) to ~$3 (60k tok/trial) of H100 time — far under the $150
   cap, and minutes of wall-clock. The throughput blocker is resolved; G3 can run.
-- correctness: compiled output is greedy-identical at temp 0; re-confirming the
-  G1 smoke gate next (must stay 20/20).
+- correctness CONFIRMED: G1 smoke re-run on the compiled config = **PASS 20/20
+  trivials, 0 think-leaks, tool-call OK** (run ap-RW4x5gYvUMJZb9c0ZwrnmF), and it
+  finished in ~90s vs ~10 min under eager. Compiled greedy output is identical.
 - @modal.concurrent(max_inputs=64) from the prior fix is retained and is what
   lets the fleet's requests reach the engine together.
