@@ -146,3 +146,18 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   ≥15 holdout independent hermetic-task admissions through corpus-curator).
 - decision-rule states this cycle: MDD n/a (no variant comparison yet) ·
   dev/holdout gap n/a (G4 only) · kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P1 Corpus · incident (holdout guard block — data point)
+- frontier is now **G2 Corpus** (status.py). While probing G2 prerequisites, a
+  Bash command that listed `tasks/holdout` was BLOCKED by guard-holdout.py
+  (exit 2). Recorded as a data point per experiment-integrity; not worked
+  around. Re-ran the probe excluding the sealed path.
+- G2 scoping facts gathered: Docker present (v29.3.1) so the 3+3 determinism
+  check can run locally; R2E-Gym and SWE-Gym dataset APIs reachable (HTTP 200);
+  `run_trial`/`run_sweep` still Phase-1 TODO stubs; tasks/dev and tasks/staging
+  empty; own private repos not in this session's scope.
+- G2 critical path (to be run as the milestone.js wave once sourcing is
+  decided): import/author ≥40 dev hermetic tasks (pinned image + binary
+  verify) → 6/6 determinism per task → stage ≥15 holdout-destined
+  (own-repo/post-cutoff only) for the operator to move. Holdout population is
+  operator-gated by design (curator item 4 + the hook).
