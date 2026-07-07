@@ -293,19 +293,26 @@ def _chat(url: str, messages, tools=None, tool_choice=None, max_tokens=1024,
 
 
 @app.local_entrypoint()
-def smoke():
+def smoke(quick: bool = False):
     """Phase 0 gate (G1). Exits nonzero on any failure so it can gate CI.
 
     Asserts, against the deployed endpoint (the same OpenAI schema the
     Anthropic proxy renames field-for-field):
       (1) tool_calls parse into a valid Anthropic tool_use block,
       (2) no response content contains '<think>' / '</think>',
-      (3) all 20 trivial tasks are answered correctly (20/20).
+      (3) all trivial tasks are answered correctly.
+
+    --quick runs 3 trivials instead of 20 — a cheap liveness check that still
+    cold-boots the GPU but skips 17 serial generations. The G1 GATE is the FULL
+    run (status.py uses it); use --quick only for a manual "is it alive?".
     """
     import json
+    import time
 
+    trivials = TRIVIALS[:3] if quick else TRIVIALS
+    t0 = time.time()
     url = _serve_url()
-    print(f"smoke: endpoint {url}")
+    print(f"smoke: endpoint {url} ({'quick' if quick else 'full'})")
     _wait_healthy(url)  # /health is unauthenticated
     print("smoke: endpoint healthy")
     key = _endpoint_key.remote()  # serve()'s /v1/* needs the Bearer key
@@ -315,7 +322,7 @@ def smoke():
 
     # (1) + (3): trivials, checking correctness and <think> leakage together.
     passed = 0
-    for i, (prompt, expect) in enumerate(TRIVIALS, 1):
+    for i, (prompt, expect) in enumerate(trivials, 1):
         try:
             resp = _chat(url, [{"role": "user", "content": prompt}], api_key=key)
             msg = resp["choices"][0]["message"]
@@ -330,7 +337,7 @@ def smoke():
             passed += 1
         else:
             failures.append(f"trivial {i}: expected {expect!r} not in {content[:120]!r}")
-    print(f"smoke: trivials {passed}/{len(TRIVIALS)} correct; think-leaks {leaks}")
+    print(f"smoke: trivials {passed}/{len(trivials)} correct; think-leaks {leaks}")
 
     # (2)/(1): forced tool call → schema-clean → maps to Anthropic tool_use.
     tool_ok = False
@@ -367,15 +374,35 @@ def smoke():
         failures.append(f"tool call: request error: {e}")
     print(f"smoke: tool-call schema {'OK' if tool_ok else 'FAILED'}")
 
-    ok = passed == len(TRIVIALS) and leaks == 0 and tool_ok
+    # Ledger the GPU time this smoke used (boot + generations) so the budget
+    # hook — which reads the ledger — isn't blind to it. Smoke boots were
+    # previously un-ledgered, so repeated smokes/status checks accumulated real
+    # H100 $ the $150 cap never saw. Conservative: charge the full wall time as
+    # GPU-seconds. Recorded even on failure (the GPU time was spent regardless).
+    elapsed = time.time() - t0
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import sweep_stats
+        stamp = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
+        sweep_stats.append_ledger(
+            Path(__file__).resolve().parent.parent / "findings" / "cost-ledger.csv",
+            f"smoke-{'quick-' if quick else ''}{stamp}",
+            f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%S}",
+            round(elapsed, 1), round(elapsed / 3600 * H100_USD_PER_HOUR, 4))
+    except Exception as e:
+        print(f"smoke: (ledger append skipped: {e})")
+
+    ok = passed == len(trivials) and leaks == 0 and tool_ok
     if not ok:
         for f in failures:
             print(f"  FAIL: {f}")
         raise SystemExit(
-            f"smoke: FAILED ({passed}/{len(TRIVIALS)} trivials, "
+            f"smoke: FAILED ({passed}/{len(trivials)} trivials, "
             f"{leaks} think-leaks, tool_ok={tool_ok})"
         )
-    print("smoke: PASS (20/20 trivials, 0 think-leaks, schema-clean tool call)")
+    print(f"smoke: PASS ({passed}/{len(trivials)} trivials, 0 think-leaks, "
+          "schema-clean tool call)")
 
 
 # run_trial only orchestrates sandboxes (the task container is where code
