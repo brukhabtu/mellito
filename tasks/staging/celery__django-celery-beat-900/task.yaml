@@ -12,6 +12,7 @@ description: |
   ![Image](https://github.com/user-attachments/assets/6270bad4-1829-4ced-9114-98844e674cf1)
 verify: "cd /testbed && pytest -rA 't/unit/test_schedulers.py::test_DatabaseScheduler::test_scheduler_valid_hours'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

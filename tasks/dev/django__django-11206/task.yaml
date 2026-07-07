@@ -15,6 +15,7 @@ description: |
   This is caused by a hardcoded cut-off point in the internal logic, but I would argue that when a decimal_pos argument is supplied and the number to be formatted is smaller in absolute size than what can be encoded using the provided number of decimal positions, the returned string should be 0.0000...000 instead.
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 utils_tests.test_numberformat"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

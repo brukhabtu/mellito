@@ -86,6 +86,7 @@ description: |
   ```
 verify: "cd /testbed && pytest -rA 'test/unit/module/template/transforms/test_language_extensions.py::TestTransformValueIsStringInMap::test_transform'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

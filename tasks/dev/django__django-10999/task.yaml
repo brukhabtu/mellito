@@ -21,6 +21,7 @@ description: |
   (Thanks to Konstantin Senichev for finding the fix.)
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 utils_tests.test_dateparse"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

@@ -13,6 +13,7 @@ description: |
   I'm not sure why this is only happening on Python 3.13, or why it's not falling back to PySide6-Essentials version 6.7, which does have a `macosx_11_0` wheel.
 verify: "cd /testbed && pytest -rA 'tests/commands/new/test_build_gui_context.py::test_pyside6_bootstrap'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

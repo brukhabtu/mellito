@@ -75,6 +75,7 @@ description: |
   This has some consequences when the app is performing startup/shutdown actions.  It works OK on the startup because logs happening in `on_load`/`on_mount` are not printed to the terminal and are not visible when the app is closed. But those of the shutdown actions placed in `on_unmount` are.
 verify: "cd /testbed && poetry run pytest -rA 'tests/test_app.py::test_app_loop'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

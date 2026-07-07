@@ -23,6 +23,7 @@ description: |
   * possibly also mention in the "IsolationForest example" documentation entry;
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && pytest -rA sklearn/ensemble/tests/test_iforest.py"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

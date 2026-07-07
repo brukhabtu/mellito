@@ -24,6 +24,7 @@ description: |
   The call goes through fine if `lexer` is changed from `python3` to `text`. This would seem like the right thing to do in any case: the console output of a `pytest` run that is being uploaded is not Python code, but arbitrary text.
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && pytest -rA testing/test_pastebin.py"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

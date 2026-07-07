@@ -7,6 +7,7 @@ description: |
   Include sdk version as well.
 verify: "cd /testbed && pytest -rA 'tests/unit/test_user_agent.py::test_user_agent_header'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

@@ -38,6 +38,7 @@ description: |
   Anyway, something in there expects a filename containing a dot to have an extension, but the filename used doesn't have the extension added.
 verify: "cd /testbed && poetry run pytest -rA 'test/test_util.py::TestPathLegalization::test_truncate[persist-dot-in-filename]'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

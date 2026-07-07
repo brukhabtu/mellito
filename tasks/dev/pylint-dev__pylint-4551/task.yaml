@@ -29,6 +29,7 @@ description: |
   Python 3.6.0 |Anaconda custom (64-bit)| (default, Dec 23 2016, 11:57:41) [MSC v.1900 64 bit (AMD64)]
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && pytest -rA tests/unittest_pyreverse_writer.py"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

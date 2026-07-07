@@ -68,6 +68,7 @@ description: |
   <!-- Thanks for contributing! -->
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && pytest -rA sklearn/metrics/cluster/tests/test_supervised.py"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

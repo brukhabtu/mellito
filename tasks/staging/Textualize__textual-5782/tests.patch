@@ -1,0 +1,37 @@
+diff --git a/tests/test_app.py b/tests/test_app.py
+index a986f2284a..5b388ce18e 100644
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -1,3 +1,4 @@
++import asyncio
+ import contextlib
+ 
+ import pytest
+@@ -340,3 +341,27 @@ def on_click(self, event: events.Click) -> None:
+             # Each click is outwith the time threshold, so a click chain is never created.
+             await raw_click(pilot, "#one")
+             assert click_count == i
++
++
++def test_app_loop() -> None:
++    """Test that App.run accepts a loop argument."""
++
++    class MyApp(App[int]):
++        def on_mount(self) -> None:
++            self.exit(42)
++
++    app = MyApp()
++    result = app.run(loop=asyncio.new_event_loop())
++    assert result == 42
++
++
++async def test_app_run_async() -> None:
++    """Check run_async runs without issues."""
++
++    class MyApp(App[int]):
++        def on_mount(self) -> None:
++            self.exit(42)
++
++    app = MyApp()
++    result = await app.run_async()
++    assert result == 42

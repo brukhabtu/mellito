@@ -7,6 +7,7 @@ description: |
   Inside the InheritDocstrings metaclass it uses `inspect.isfunction` which returns `False` for properties.
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && pytest -rA -vv -o console_output_style=classic --tb=no astropy/utils/tests/test_misc.py"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

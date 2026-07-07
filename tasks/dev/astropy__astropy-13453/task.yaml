@@ -273,6 +273,7 @@ description: |
   Matplotlib 3.5.2
 verify: "source /opt/miniconda3/bin/activate testbed && cd /testbed && pytest -rA astropy/io/ascii/tests/test_html.py"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Imported from SWE-bench_Verified; FAIL_TO_PASS is the verdict set."
 admitted:
   determinism_check: 6/6

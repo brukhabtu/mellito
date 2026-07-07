@@ -47,6 +47,7 @@ description: |
   ```
 verify: "cd /testbed && source venv/bin/activate && python -m pytest -rA 'acme/src/acme/_internal/tests/errors_test.py::ValidationErrorTest::test_repr'"
 timeout_s: 1800
+hidden_tests: tests.patch
 notes: "Best-effort holdout (operator-approved): public 2025-06, repo disjoint from dev; NOT strict post-cutoff. Weaker contamination guarantee."
 admitted:
   determinism_check: 6/6

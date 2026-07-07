@@ -1,0 +1,12 @@
+diff --git a/test/integration/command/test_remote_users.py b/test/integration/command/test_remote_users.py
+index 46b21945c3c..a1f4106a112 100644
+--- a/test/integration/command/test_remote_users.py
++++ b/test/integration/command/test_remote_users.py
+@@ -93,6 +93,7 @@ def test_command_user_with_password_spaces(self):
+         servers = {"default": test_server}
+         client = TestClient(servers=servers, inputs=["lasote", "mypass"])
+         client.run(r'remote login default lasote -p="my \"password"')
++        assert "Connecting to remote" not in client.out
+         assert "Changed user of remote 'default' from 'None' (anonymous) to 'lasote'" in client.out
+         client.run('remote logout default')
+         client.run(r'remote login default lasote -p "my \"password"')
