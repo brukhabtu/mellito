@@ -56,3 +56,20 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   resolves.
 - decision-rule states this cycle: MDD n/a (no runs) · dev/holdout gap n/a
   (G4 only) · kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P0 Serving · incident (partial unblock — still BLOCKED)
+- update to the G1 block above: operator completed Modal web auth.
+- evidence: `modal profile current` → `bruk-habtu`; token at `~/.modal.toml`.
+  `python3 infra/status.py` G1 line now reads `[----] smoke suite exits 0
+  (exit 1)` — the CLI resolves, authenticates, and actually executes
+  `modal run infra/modal_app.py::smoke`, which exits 1 from its unimplemented
+  Phase-0 stub. Prior state was `(modal CLI missing)`.
+- unit status now: **U1 Modal auth RESOLVED**. U2 gated HF weights still
+  unsatisfied (`modal secret list` empty; no `HF_TOKEN` in env or ~/.cache).
+  U3 deploy + U4 smoke-body remain, gated on U2.
+- verdict: **still BLOCKED — stop condition (c)**, binding constraint now
+  narrowed to U2 (HF gated-weights access). No GPU spent; budget ledger empty.
+- unblock path (operator): accept the `deepreinforce-ai/Ornith-1.0-35B-FP8`
+  license on Hugging Face and provide an `HF_TOKEN`; it will be wired as a
+  Modal secret (`modal secret create huggingface HF_TOKEN=...`), never
+  committed. Then: implement U4, `modal deploy`, re-run status.py.
