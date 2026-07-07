@@ -378,3 +378,24 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   without a live endpoint (same integrity stance as the G1 smoke-body deferral).
 - decision-rule states this cycle: MDD n/a · dev/holdout gap n/a (G4 only) ·
   kill criterion n/a (no cost/pass data yet).
+
+## 2026-07-07 · P0 Serving · run (G1 re-confirmed live after container reset)
+- context: the ornith-harness `serve` app was still deployed from the prior
+  session (`modal app list` shows it). After re-auth (see modal-auth skill),
+  ran `modal run infra/modal_app.py::smoke` against it.
+- flake (logged per experiment-integrity before re-running): first run scored
+  **19/20** — trivial 5 failed with `HTTP 500 Internal Server Error`, a
+  transient server-side error (think-leaks 0, tool-call schema OK; the other 19
+  correct). Endpoint logs showed all other requests 200 OK at ~13 tok/s.
+- re-run on the warm endpoint: **smoke PASS — 20/20 trivials, 0 think-leaks,
+  schema-clean tool call** (run `ap-foZEfhxyx3EJ1mMgKWaajg`). The 500 did not
+  recur; treated as a transient endpoint blip, not a regression.
+- **implication for G3 run_trial:** the endpoint can emit a transient 5xx under
+  load. Per PLAN "Error ≠ fail", a trial hitting a transient 5xx must be retried
+  a bounded number of times and, if still failing, recorded as verdict=`invalid`
+  (excluded from paired stats), never `fail`. Bake this into run_trial's worker
+  loop and verdict path.
+- serving perf unchanged: ~13 tok/s generation (eager + triton-GDN). A full dev
+  sweep (40 tasks × trials × agentic multi-step) will be slow — size trial
+  timeouts and budget accordingly; P2 throughput tuning (bake nvcc, re-enable
+  compile/cudagraph) remains a later lever.
