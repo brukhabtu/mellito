@@ -31,9 +31,18 @@ runs_vol = modal.Volume.from_name("ornith-runs", create_if_missing=True)
 vllm_image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("vllm>=0.19.1", "huggingface_hub", "hf_transfer")
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
-    # TODO(phase0): bake the patched chat_template.jinja (community PR removes
-    # the raise_exception asserts) into the image and pass --chat-template.
+    .env(
+        {
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",
+            # This slim image has no CUDA toolkit (no nvcc). FlashInfer's
+            # top-k/top-p sampler JIT-compiles at boot and hard-fails without
+            # nvcc (RuntimeError in flashinfer.jit). Force vLLM's native Torch
+            # sampler — output-identical at temperature 0 (greedy) and needs no
+            # JIT. (Full-attn=FlashAttention, MoE=CUTLASS, GDN-prefill=triton
+            # are all already JIT-free.)
+            "VLLM_USE_FLASHINFER_SAMPLER": "0",
+        }
+    )
 )
 
 
