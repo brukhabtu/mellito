@@ -1,0 +1,9 @@
+id: v001-baseline
+parent: null
+hypothesis: >-
+  Baseline: Ornith-35B in stock Claude Code with a minimal worker CLAUDE.md
+  that hands it whole verifiable tasks (goal + verify command) and grants
+  full self-direction. Establishes the reference numbers all mutations are
+  paired against.
+date: 2026-07-06
+status: proposed
