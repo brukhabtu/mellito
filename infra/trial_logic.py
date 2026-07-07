@@ -25,16 +25,23 @@ def parse_stream_json(lines: list[str]) -> dict:
     """Extract usage/verdict signal from a Claude Code `stream-json` transcript.
 
     The CLI emits one JSON object per line and terminates with a
-    `{"type":"result", ...}` summary carrying usage + cost. We scan for the LAST
-    valid result line (a run can legitimately contain several if it was
-    resumed); everything else — partial lines, non-JSON banner text, tool
-    output — is tolerated and skipped.
+    `{"type":"result", ...}` summary carrying num_turns / cost / is_error. We
+    scan for the LAST valid result line (a run can legitimately contain several
+    if it was resumed); everything else — partial lines, banner text — is
+    tolerated and skipped.
 
-    tokens_in folds all three input buckets (fresh + cache read + cache
-    creation) because cost and context pressure are driven by their sum, not by
-    the fresh-input slice alone.
+    TOKENS come from the per-`assistant`-message `usage`, NOT the result line:
+    against a custom endpoint (ornith via the proxy) Claude Code leaves the
+    result-line `usage`/`total_cost_usd` all-zero (its cost DB has no
+    'ornith-35b' entry), but every assistant message still reports its own
+    token usage. Summing those is the only source that is correct for BOTH the
+    custom endpoint and the real Anthropic API. `tokens_in` folds all three
+    input buckets (fresh + cache read + cache creation) and therefore counts
+    the per-turn re-sent context — i.e. total prefill work, not unique tokens.
+    tokens_out is the decode work that drives GPU-seconds attribution.
     """
     result = None
+    tokens_in = tokens_out = 0
     for line in lines:
         line = line.strip()
         if not line:
@@ -43,31 +50,50 @@ def parse_stream_json(lines: list[str]) -> dict:
             obj = json.loads(line)
         except (ValueError, TypeError):
             continue  # garbage / partial line — tolerate
-        if isinstance(obj, dict) and obj.get("type") == "result":
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("type") == "result":
             result = obj  # keep scanning; we want the last one
+        elif obj.get("type") == "assistant":
+            u = (obj.get("message") or {}).get("usage") or {}
+            tokens_in += ((u.get("input_tokens") or 0)
+                          + (u.get("cache_read_input_tokens") or 0)
+                          + (u.get("cache_creation_input_tokens") or 0))
+            tokens_out += (u.get("output_tokens") or 0)
 
     if result is None:
         return {
-            "tokens_in": 0, "tokens_out": 0, "num_turns": 0,
-            "is_error": False, "subtype": "", "api_usd": 0.0,
+            "tokens_in": int(tokens_in), "tokens_out": int(tokens_out),
+            "num_turns": 0, "is_error": False, "subtype": "", "api_usd": 0.0,
             "found_result": False,
         }
-
-    usage = result.get("usage") or {}
-    tokens_in = (
-        (usage.get("input_tokens") or 0)
-        + (usage.get("cache_read_input_tokens") or 0)
-        + (usage.get("cache_creation_input_tokens") or 0)
-    )
     return {
         "tokens_in": int(tokens_in),
-        "tokens_out": int(usage.get("output_tokens") or 0),
+        "tokens_out": int(tokens_out),
         "num_turns": int(result.get("num_turns") or 0),
         "is_error": bool(result.get("is_error", False)),
         "subtype": str(result.get("subtype") or ""),
+        # total_cost_usd is real for hosted Claude models, 0 for the custom
+        # ornith endpoint (no pricing) — which is correct: ornith has no API $.
         "api_usd": float(result.get("total_cost_usd") or 0.0),
         "found_result": True,
     }
+
+
+def patch_target_files(patch_text: str) -> list:
+    """Repo-relative paths a unified diff modifies (the `+++ b/<path>` side).
+    Used to reset the hidden-test files to base before applying them, so the
+    worker's edits to any test file are discarded (tests are authoritative)."""
+    files = []
+    for line in (patch_text or "").splitlines():
+        if line.startswith("+++ "):
+            p = line[4:].strip()
+            if p == "/dev/null":
+                continue
+            if p.startswith("b/"):
+                p = p[2:]
+            files.append(p.split("\t")[0])
+    return files
 
 
 # --- stage → verdict table ------------------------------------------------

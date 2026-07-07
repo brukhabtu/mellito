@@ -662,6 +662,16 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             return _result(v, "worker_diff_apply_failed", usage=usage,
                            timed_out=timed_out)
 
+        # Reset the files the hidden tests touch back to base BEFORE applying
+        # them: the worker may have edited test files (it did on the first real
+        # trial), which both conflicts with the patch and would let a worker
+        # game the tests. Tests are authoritative (SWE-bench semantics) — the
+        # worker's source fix is kept, its test edits are discarded.
+        test_files = tl.patch_target_files(task_spec.get("hidden_tests_content") or "")
+        if test_files:
+            vsb.exec("git", "checkout", base_sha, "--", *test_files,
+                     workdir="/testbed").wait()
+
         rc = vsb.exec("git", "apply", "/tmp/tests.patch", workdir="/testbed").wait()
         if rc != 0:
             v = tl.classify("hidden_tests_apply_failed")

@@ -9,40 +9,66 @@ import trial_logic as tl  # noqa: E402
 
 
 def _result_line(**kw):
+    # NOTE: the result line's own usage is intentionally all-zero, mirroring
+    # what Claude Code emits against the custom (unpriced) ornith endpoint —
+    # tokens must come from the assistant messages, not here.
     base = {
         "type": "result", "subtype": "success", "is_error": False,
         "num_turns": 7, "total_cost_usd": 0.1234,
-        "usage": {"input_tokens": 100, "output_tokens": 50,
-                  "cache_read_input_tokens": 20, "cache_creation_input_tokens": 5},
+        "usage": {"input_tokens": 0, "output_tokens": 0,
+                  "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
     }
     base.update(kw)
     return json.dumps(base)
 
 
+def _asst(inp=0, out=0, cr=0, cc=0):
+    return json.dumps({"type": "assistant", "message": {"usage": {
+        "input_tokens": inp, "output_tokens": out,
+        "cache_read_input_tokens": cr, "cache_creation_input_tokens": cc}}})
+
+
 # --- parse_stream_json ----------------------------------------------------
 
-def test_parse_normal_stream_sums_tokens_and_cost():
+def test_parse_sums_tokens_from_assistant_messages():
+    # Tokens come from per-assistant usage (summed over turns), NOT the
+    # all-zero result line — the ornith-endpoint reality.
     lines = [
         json.dumps({"type": "system", "subtype": "init"}),
-        json.dumps({"type": "assistant", "message": {"content": "hi"}}),
+        _asst(inp=100, out=50, cr=20, cc=5),
+        _asst(inp=200, out=30, cr=10, cc=0),
         _result_line(),
     ]
     u = tl.parse_stream_json(lines)
     assert u["found_result"] is True
-    assert u["tokens_in"] == 100 + 20 + 5   # input + cache_read + cache_creation
-    assert u["tokens_out"] == 50
+    assert u["tokens_in"] == (100 + 20 + 5) + (200 + 10 + 0)
+    assert u["tokens_out"] == 50 + 30
     assert u["num_turns"] == 7
     assert u["is_error"] is False
     assert u["subtype"] == "success"
     assert abs(u["api_usd"] - 0.1234) < 1e-9
 
 
+def test_parse_tokens_summed_even_without_result_line():
+    u = tl.parse_stream_json([_asst(inp=10, out=7)])
+    assert u["found_result"] is False
+    assert u["tokens_out"] == 7
+    assert u["tokens_in"] == 10
+
+
 def test_parse_picks_last_result_line():
-    lines = [_result_line(num_turns=1), _result_line(num_turns=9,
-             usage={"input_tokens": 1, "output_tokens": 2})]
+    lines = [_result_line(num_turns=1), _result_line(num_turns=9)]
     u = tl.parse_stream_json(lines)
     assert u["num_turns"] == 9
-    assert u["tokens_out"] == 2
+
+
+def test_patch_target_files():
+    patch = ("diff --git a/tests/x_test.py b/tests/x_test.py\n"
+             "--- a/tests/x_test.py\n+++ b/tests/x_test.py\n@@ -1 +1 @@\n-a\n+b\n"
+             "diff --git a/pkg/new.py b/pkg/new.py\n"
+             "--- /dev/null\n+++ b/pkg/new.py\n@@ -0,0 +1 @@\n+x\n")
+    assert tl.patch_target_files(patch) == ["tests/x_test.py", "pkg/new.py"]
+    assert tl.patch_target_files("") == []
 
 
 def test_parse_is_error_result():
@@ -70,7 +96,7 @@ def test_parse_tolerates_garbage_interleaved():
         "not json at all",
         "",
         "{partial json",
-        json.dumps({"type": "assistant"}),
+        _asst(out=50),
         _result_line(),
         "\x00\x01 trailing noise",
     ]
