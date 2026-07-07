@@ -32,6 +32,32 @@ first-class deliverable in both outcomes.
 - **G6 Decision.** Routing recommendation with blended-cost math, kill
   criterion explicitly evaluated, write-up shipped.
 
+## Status (2026-07-07)
+
+Live gate state is mechanical: `python3 infra/status.py`. Full log:
+findings/FINDINGS.md. Summary of where the project stands:
+
+- **G1 Serving — MET.** Ornith-1.0-35B-FP8 on 1×H100 (vLLM 0.24, Modal). Smoke
+  20/20, 0 `<think>` leaks, schema-clean tool call (run `ap-RW4x5gYvUMJZb9c0ZwrnmF`).
+  P2 throughput tuned in-place: `@modal.concurrent` + cudagraph/compile lifted
+  aggregate throughput **13 → ~908 tok/s** (~70×), making a full sweep ~$5–15.
+- **G2 Corpus — dev MET, holdout staged.** 40 dev tasks imported from SWE-bench
+  Verified (prebuilt images, 6/6 determinism, hidden test_patch persisted so
+  they run as real evals), rebalanced across 6 repos. Holdout: 18 best-effort
+  tasks staged from SWE-bench-Live 2025-06 (provenance `held-out-public`).
+  Deviations from the original strategy, both operator-approved and logged:
+  (a) dev is 100% public-pretrained — own repos (simstim/Kerf) are off-limits
+  for this project; (b) no public dataset has genuine post-2026-06-25 tasks, so
+  holdout is a best-effort *held-out-repos* proxy, not a strict post-cutoff set
+  (weaker contamination guarantee — see tasks/schema.md). Gate closes when the
+  operator moves ≥15 staged specs into tasks/holdout/.
+- **G3 Measurement — machinery built, first baseline pending.** `sweep_stats.py`
+  (per-task, paired-vs-parent, provenance slices, Wilson CI, cost) and
+  `run_sweep` are wired and unit-tested; the hidden-tests verdict path is proven
+  locally. Remaining: `run_trial`'s worker body (modal.Sandbox per task + Claude
+  Code CLI vs the endpoint), then the Ornith / Haiku 4.5 / Sonnet 5 baseline.
+- **G4–G6 — not started.**
+
 ## Decision rules (pre-committed — surface, don't re-litigate)
 
 - **Minimum detectable difference:** at this corpus size (~40 tasks × 5
