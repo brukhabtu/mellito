@@ -20,6 +20,15 @@ import math
 from collections import defaultdict
 from pathlib import Path
 
+# Cost-attribution throughput constant, shared with trial_logic (the single
+# source of truth). Imported so the per-trial attribution string can never drift
+# from the divisor run_trial actually uses; the literal is a fallback for when
+# this module is imported without trial_logic on the path.
+try:
+    from trial_logic import AGG_TOK_PER_S
+except ImportError:
+    AGG_TOK_PER_S = 908.0
+
 
 def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     """95% Wilson score interval for k passes of n valid trials."""
@@ -121,7 +130,8 @@ def cost(results: list, usd_per_gpu_hour: float) -> dict:
         "usd_per_solved_task": round((usd + api_usd) / solved_tasks, 4)
         if solved_tasks else None,
         # How the two spend figures are derived, for the operator reading a run.
-        "gpu_attribution": {"per_trial": "tokens_out/908", "ledger": "max(sum, wall)"},
+        "gpu_attribution": {"per_trial": f"tokens_out/{AGG_TOK_PER_S:g}",
+                            "ledger": "max(sum, wall)"},
         "tokens_in": tin, "tokens_out": tout,
         "trials": len(results), "valid_trials": len(valid),
         "invalid_trials": len(results) - len(valid),

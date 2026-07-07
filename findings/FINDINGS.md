@@ -528,3 +528,47 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
      cases over per_task/paired/provenance/cost/summary/ledger — **18 passed**.
 - code-review of the run_trial/run_sweep surface happens with the Phase B diff
   (one review covers both) before the first paid trial.
+
+## 2026-07-07 · P2 Measurement · run (adversarial review of run_trial before first paid trial)
+- per the approved plan, the G3 runner was code-reviewed (Fable, 8 finder
+  angles via subagents, 1-vote verify) before any paid run. **10 confirmed
+  findings**, all fixed in the same cycle (fix implementation by the Opus
+  builder from a pinned fix list; re-reviewed + spot-checked by Fable; 34/34
+  tests green). Highest-severity, all verified against modal 1.5.1 source or
+  by experiment:
+  1. one raising trial aborted the whole sweep AND lost all finished results +
+     the ledger row (starmap return_exceptions=False default; trials.jsonl
+     written post-loop) → now return_exceptions=True + per-trial invalid.
+  2. ALL ExecTimeoutError handling was dead code (modal ends streams silently,
+     wait() returns -1) → timeouts were double-billed retries landing as
+     invalid; now detected via rc==-1 + elapsed, timeout proceeds to diff.
+  3. CLI is_error results fell through to empty_diff → 'fail' (Error≠fail
+     violation) → now invalid 'worker_reported_error'.
+  4. git diff --binary read through a strict-UTF-8 text stream (crash on
+     non-UTF-8 fixtures) → bytes end-to-end.
+  5. serve()/proxy() were publicly routable with NO auth and a repo-hardcoded
+     proxy key (CLAUDE.md secrets rule) → new `ornith-endpoint-keys` Modal
+     secret (VLLM_API_KEY + PROXY_MASTER_KEY, values never in repo/echoed);
+     vllm --api-key; proxy master key from env; smoke fetches the key via a
+     secret-attached function.
+  6. phantom api_usd on ornith trials (Claude Code self-prices tokens even via
+     proxy) + base_url used as the ornith/claude switch → explicit
+     worker.gpu_attributed drives gpu vs api attribution.
+  7. run_one bypassed the RUN_SWEEP_API_OK API-spend ack → gate moved into
+     _make_worker (single choke point).
+  8. unchecked git/scaffold exit codes booked infra faults as model 'fail'
+     (base_sha='', failed materialization, failed git add) → explicit invalid
+     reasons.
+  9. partial/claude-run exclusion from paired stats relied on run_id string
+     luck → summaries now carry partial/worker_model/variant fields and
+     _parent_per_task selects on them.
+  10. trial_logic.classify verdict table was unwired dead code → run_trial now
+     routes every stage→verdict through it (retry orchestration stays in the
+     caller).
+- also: oracle-leak tar scan moved to _tar_config (fails locally before any
+  container is scheduled; in-trial backstop kept), URL resolvers deduped,
+  attribution string derives from AGG_TOK_PER_S.
+- residual known risks (accepted, logged): timeout detection is time-based
+  (rc -1 near deadline from another kill mislabels as timeout); smoke pays one
+  extra slim-container start to fetch the endpoint key; legacy summaries
+  without the new fields are treated as non-partial ornith.

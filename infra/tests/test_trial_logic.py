@@ -98,6 +98,14 @@ def test_classify_terminal_stages():
     assert tl.classify("verify_timeout") == "fail"
 
 
+def test_classify_new_invalid_stages():
+    # Stages added in the review pass: each is an execution error, never a fail.
+    for stage in ("worker_reported_error", "base_sha_unresolved",
+                  "scaffold_materialize_failed", "worker_diff_stage_failed",
+                  "verdict_sandbox_create_failed"):
+        assert tl.classify(stage) == "invalid", stage
+
+
 def test_classify_worker_timeout_proceeds():
     assert tl.classify("worker_timeout") == tl.PROCEED
     assert tl.PROCEED == "proceed"
@@ -118,24 +126,29 @@ def test_classify_unknown_stage_is_invalid():
 
 def test_worker_env_ornith_sets_base_url_and_key():
     w = {"model": "ornith-35b", "small_model": "ornith-35b",
-         "base_url": "https://proxy.example/", "api_key": "sk-ornith-harness"}
+         "base_url": "https://proxy.example/", "api_key": "sk-proxy-real"}
     env = tl.worker_env(w)
     assert env["ANTHROPIC_BASE_URL"] == "https://proxy.example/"
     assert env["ANTHROPIC_MODEL"] == "ornith-35b"
     assert env["ANTHROPIC_SMALL_FAST_MODEL"] == "ornith-35b"
-    assert env["ANTHROPIC_API_KEY"] == "sk-ornith-harness"
+    assert env["ANTHROPIC_API_KEY"] == "sk-proxy-real"
     for k in ("DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING",
               "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"):
         assert env[k] == "1"
 
 
-def test_worker_env_claude_omits_base_url_default_key():
+def test_worker_env_missing_key_falls_back_to_sentinel():
+    # No api_key (ornith path before run_trial fills it) or api_key=None -> the
+    # 'missing-key' sentinel, NOT any hardcoded proxy key.
     w = {"model": "claude-sonnet-4-5", "small_model": "claude-haiku-4-5-20251001",
          "base_url": None}
     env = tl.worker_env(w)
     assert "ANTHROPIC_BASE_URL" not in env
-    assert env["ANTHROPIC_API_KEY"] == "sk-ornith-harness"  # default sentinel
+    assert env["ANTHROPIC_API_KEY"] == "missing-key"
     assert env["ANTHROPIC_SMALL_FAST_MODEL"] == "claude-haiku-4-5-20251001"
+    env2 = tl.worker_env({"model": "ornith-35b", "base_url": "https://p/",
+                          "api_key": None})
+    assert env2["ANTHROPIC_API_KEY"] == "missing-key"
 
 
 def test_worker_env_extra_overrides():

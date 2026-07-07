@@ -73,17 +73,25 @@ def parse_stream_json(lines: list[str]) -> dict:
 # --- stage → verdict table ------------------------------------------------
 #
 # A "stage" names *where* the trial resolved; classify() maps it to one of the
-# four outcomes the harness understands. The contract (from the runner spec):
+# four outcomes the harness understands. The table owns stage -> final-verdict
+# ONLY; the retry/loop SEQUENCING (how many worker attempts, when to re-create a
+# sandbox) lives in the caller (run_trial in modal_app.py), not here. The
+# contract (from the runner spec):
 #
 #   worker_sandbox_create_failed  first attempt  -> retry
 #                                 after retries  -> invalid   (detail="exhausted")
 #   worker_no_result_line         first attempt  -> retry
 #                                 after 1 retry  -> invalid   (detail="exhausted")
+#   worker_reported_error         -> invalid   (CLI self-reported is_error)
+#   base_sha_unresolved           -> invalid   (git rev-parse failed/empty)
+#   scaffold_materialize_failed   -> invalid   (mkdir/tar/cp of .claude failed)
+#   worker_diff_stage_failed      -> invalid   (git add of the worker change failed)
 #   empty_diff                    -> fail      (worker produced no code change)
 #   worker_timeout                -> PROCEED   (not terminal: caller still diffs
 #                                               whatever the worker wrote so far)
 #   worker_diff_apply_failed      -> invalid   (execution error, never "fail")
 #   hidden_tests_apply_failed     -> invalid   (our patch, not the worker's fault)
+#   verdict_sandbox_create_failed -> invalid   (Phase B sandbox create failed)
 #   verify_exit_zero              -> pass
 #   verify_exit_nonzero           -> fail
 #   verify_timeout                -> fail       (a hung verify is a failed fix)
@@ -98,10 +106,15 @@ PROCEED = "proceed"
 _RETRY_STAGES = {"worker_sandbox_create_failed", "worker_no_result_line"}
 
 _STAGE_VERDICT = {
+    "worker_reported_error": "invalid",
+    "base_sha_unresolved": "invalid",
+    "scaffold_materialize_failed": "invalid",
+    "worker_diff_stage_failed": "invalid",
     "empty_diff": "fail",
     "worker_timeout": PROCEED,
     "worker_diff_apply_failed": "invalid",
     "hidden_tests_apply_failed": "invalid",
+    "verdict_sandbox_create_failed": "invalid",
     "verify_exit_zero": "pass",
     "verify_exit_nonzero": "fail",
     "verify_timeout": "fail",
@@ -111,9 +124,12 @@ _STAGE_VERDICT = {
 def classify(stage: str, detail: str = "") -> str:
     """Map a stage name to 'pass'/'fail'/'invalid'/'retry' (or PROCEED).
 
-    Retryable stages return 'retry' until the caller passes detail='exhausted',
-    at which point they resolve to 'invalid'. Unknown stages are treated as
-    'invalid' — an unclassified failure is an execution error, never a pass.
+    This is the stage -> final-verdict table ONLY. Retry/loop SEQUENCING (how
+    many worker attempts, when the caller re-creates a sandbox vs. gives up)
+    lives in the caller (run_trial), not here: the two retryable stages return
+    'retry' until the caller passes detail='exhausted', at which point they
+    resolve to 'invalid'. Unknown stages are treated as 'invalid' — an
+    unclassified failure is an execution error, never a pass.
     """
     if stage in _RETRY_STAGES:
         return "invalid" if detail == "exhausted" else "retry"
@@ -135,7 +151,7 @@ def worker_env(worker: dict, extra: dict | None = None) -> dict:
     env = {
         "ANTHROPIC_MODEL": worker["model"],
         "ANTHROPIC_SMALL_FAST_MODEL": worker.get("small_model") or worker["model"],
-        "ANTHROPIC_API_KEY": worker.get("api_key", "sk-ornith-harness"),
+        "ANTHROPIC_API_KEY": worker.get("api_key") or "missing-key",
         "DISABLE_AUTOUPDATER": "1",
         "DISABLE_TELEMETRY": "1",
         "DISABLE_ERROR_REPORTING": "1",
