@@ -1,0 +1,19 @@
+id: v002-completion-contract
+parent: v001-baseline
+hypothesis: >-
+  The plurality of v001 failures (harness-friction, 54% of 107 non-pass trials
+  in run 20260707T215242-v001-baseline) are self-termination: Ornith localizes
+  and diagnoses correctly, then ends its turn with an empty diff — describing
+  the fix in prose, asking the user for direction, or resetting into a generic
+  greeting instead of calling Edit. Adding a "completion contract" to the worker
+  CLAUDE.md (act-don't-describe; never end a turn without a diff and a green
+  VERIFY.txt; you are autonomous so never ask for direction; stay on task, no
+  greeting resets) will convert a meaningful share of these premature stops into
+  applied edits. Falsifiable prediction: v002 lifts dev pass rate by >=5 points
+  paired vs v001 (the MDD floor), concentrated in the ~58 harness-friction
+  trials and the 9 flip-candidate tasks (1-2/5 in baseline); the 11 never-solved
+  tasks (capability frontier) and 7 locked tasks (5/5) should barely move. If the
+  gain is <5 points or shows up on already-solved tasks rather than the
+  harness-friction set, the self-direction thesis is wrong and v002 is rejected.
+date: 2026-07-08
+status: proposed
