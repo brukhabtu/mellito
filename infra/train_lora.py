@@ -50,12 +50,14 @@ app = modal.App("ornith-lora")
 weights_bf16 = modal.Volume.from_name("ornith-weights-bf16", create_if_missing=True)
 adapters = modal.Volume.from_name("ornith-adapters", create_if_missing=True)
 
-# HF token only needed if the repo turns out to be gated; wrap so a missing
-# secret never crashes import (the harness has no Modal secret configured).
-try:
-    _HF_SECRETS = [modal.Secret.from_name("huggingface-token")]
-except Exception:
-    _HF_SECRETS = []
+# HF token only needed if the repo turns out to be gated. Modal resolves
+# Secret.from_name lazily at RUN time (not construction), so a try/except here
+# can't shield a missing secret — it would fail the run. Per the plan the bf16
+# repo pulls tokenless (its FP8 sibling does in serve()); only if a pull 401s do
+# we create the secret. So attach nothing by default; to enable, create the
+# secret (`modal secret create huggingface-token HF_TOKEN=hf_...`) and set this
+# to [modal.Secret.from_name("huggingface-token")].
+_HF_SECRETS: list = []
 
 
 # --- images ----------------------------------------------------------------
@@ -75,9 +77,11 @@ preflight_image = (
     .add_local_python_source("chat_template_adapt", "export_trajectories")
 )
 
-# Training superset: Unsloth-primary, TRL+PEFT fallback (chosen at runtime via
-# try/except). One image carries both so the fallback needs no rebuild. The SFT
-# JSONL is baked in at /data/sft.jsonl (add_local_file is an image-build step).
+# Training image: TRL+PEFT (the arch-agnostic path). Research indicates Unsloth
+# does not register this Qwen3.5-MoE hybrid Mamba/GDN checkpoint, so we do NOT
+# bake the heavy/fragile unsloth wheel into the image — train_lora attempts
+# `import unsloth` at runtime and falls straight to TRL+PEFT if it's absent or
+# can't load the arch. The SFT JSONL is baked in at /data/sft.jsonl.
 train_image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install(
@@ -88,7 +92,6 @@ train_image = (
         "datasets",
         "accelerate",
         "bitsandbytes",
-        "unsloth",
         "jinja2",
         "huggingface_hub",
         "hf_transfer",
