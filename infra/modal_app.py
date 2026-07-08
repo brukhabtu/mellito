@@ -36,6 +36,15 @@ app = modal.App("ornith-harness")
 # Weights cached once; ~35GB FP8 keeps cold starts ~1-2 min.
 weights = modal.Volume.from_name("ornith-weights", create_if_missing=True)
 runs_vol = modal.Volume.from_name("ornith-runs", create_if_missing=True)
+# P4 LoRA adapters (written by infra/train_lora.py). Mounted read-only into
+# serve() so vLLM can hot-load the rank-32 adapter alongside the FP8 base.
+adapters = modal.Volume.from_name("ornith-adapters", create_if_missing=True)
+
+# The P4 adapter served next to the base. bf16 LoRA (r=32, attention-only)
+# trained on Ornith's own verifier-passing trajectories; see FINDINGS
+# 2026-07-08 P4 LoRA. Applied over the FP8 base — attention projection shapes
+# are identical across the FP8/bf16 siblings, so the bf16 delta drops in.
+LORA_ADAPTER = "lora-20260708T162249"
 
 vllm_image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -58,7 +67,7 @@ vllm_image = (
 @app.function(
     image=vllm_image,
     gpu=GPU,
-    volumes={"/weights": weights},
+    volumes={"/weights": weights, "/adapters": adapters},
     scaledown_window=120,  # warm containers bill; keep this short
     timeout=60 * MINUTES,
     secrets=[ENDPOINT_KEYS],
@@ -120,6 +129,16 @@ def serve():
         # vLLM's --api-key middleware gates /v1/* (Bearer). /health stays public,
         # so _wait_healthy needs no key. Key comes from the Modal secret.
         "--api-key", os.environ["VLLM_API_KEY"],
+        # P4: hot-load the rank-32 LoRA as a SECOND served model ("ornith-lora")
+        # alongside the base ("ornith-35b"). Both are reachable on the same
+        # endpoint, so the re-gate can run the tuned model paired against the
+        # base with no second deployment. --max-lora-rank must be >= the
+        # adapter's r (32). If vLLM rejects LoRA on this hybrid MoE/FP8 arch at
+        # boot, the fallback is merge_and_unload -> bf16 -> FP8 requantize (see
+        # plan Step D); the base model stays served either way.
+        "--enable-lora",
+        "--lora-modules", f"ornith-lora=/adapters/{LORA_ADAPTER}",
+        "--max-lora-rank", "32",
     ]
     subprocess.Popen(cmd)
 
@@ -151,30 +170,34 @@ def proxy():
     /v1/* is gated by PROXY_MASTER_KEY. Both come from the Modal secret.
     """
     serve_url = _serve_url()
+
+    def _entry(name):
+        # `hosted_vllm/` (NOT generic `openai/`) is the provider that lifts
+        # vLLM's `reasoning_content` onto the streamed delta. The generic
+        # openai/ transformer does not, so the Anthropic /v1/messages adapter's
+        # reasoning->thinking branch never fired and transcripts captured 0
+        # thinking blocks (needed for P4 LoRA targets). The adapter itself
+        # already emits thinking blocks from reasoning_content in litellm 1.91 —
+        # it just needs the vLLM provider to populate it. See FINDINGS
+        # 2026-07-08 P4 recapture incident + research.
+        return {
+            "model_name": name,
+            "litellm_params": {
+                "model": f"hosted_vllm/{name}",
+                "api_base": f"{serve_url}/v1",
+                "api_key": os.environ["VLLM_API_KEY"],
+            },
+            # Capability tag: gates request-side thinking->reasoning_effort
+            # mapping + token accounting. Necessary but not sufficient on its own
+            # (the provider prefix above is the load-bearing change).
+            "model_info": {"supports_reasoning": True},
+        }
+
     config = {
-        "model_list": [
-            {
-                "model_name": "ornith-35b",
-                "litellm_params": {
-                    # `hosted_vllm/` (NOT generic `openai/`) is the provider that
-                    # lifts vLLM's `reasoning_content` onto the streamed delta.
-                    # The generic openai/ transformer does not, so the Anthropic
-                    # /v1/messages adapter's reasoning->thinking branch never
-                    # fired and transcripts captured 0 thinking blocks (needed for
-                    # P4 LoRA targets). The adapter itself already emits thinking
-                    # blocks from reasoning_content in litellm 1.91 — it just
-                    # needs the vLLM provider to populate it. See FINDINGS
-                    # 2026-07-08 P4 recapture incident + research.
-                    "model": "hosted_vllm/ornith-35b",
-                    "api_base": f"{serve_url}/v1",
-                    "api_key": os.environ["VLLM_API_KEY"],
-                },
-                # Capability tag: gates request-side thinking->reasoning_effort
-                # mapping + token accounting. Necessary but not sufficient on its
-                # own (the provider prefix above is the load-bearing change).
-                "model_info": {"supports_reasoning": True},
-            }
-        ],
+        # Both the base and the P4 LoRA are served on one vLLM endpoint (serve()
+        # --lora-modules), so the proxy exposes both. The re-gate runs the tuned
+        # `ornith-lora` paired against `ornith-35b` on the same stack.
+        "model_list": [_entry("ornith-35b"), _entry("ornith-lora")],
         # NB: do NOT set merge_reasoning_content_in_choices — that folds <think>
         # back into `content` (reintroduces the leak the parser removes). We want
         # reasoning as SEPARATE thinking blocks, not merged text.
@@ -282,11 +305,11 @@ def _wait_healthy(url: str, timeout_s: int = 30 * 60) -> None:
 
 
 def _chat(url: str, messages, tools=None, tool_choice=None, max_tokens=1024,
-          api_key: str = "") -> dict:
+          api_key: str = "", model: str = "ornith-35b") -> dict:
     import json
     import urllib.request
     body = {
-        "model": "ornith-35b",
+        "model": model,
         "messages": messages,
         "temperature": 0,
         "max_tokens": max_tokens,
@@ -309,7 +332,7 @@ def _chat(url: str, messages, tools=None, tool_choice=None, max_tokens=1024,
 
 
 @app.local_entrypoint()
-def smoke(quick: bool = False):
+def smoke(quick: bool = False, model: str = "ornith-35b"):
     """Phase 0 gate (G1). Exits nonzero on any failure so it can gate CI.
 
     Asserts, against the deployed endpoint (the same OpenAI schema the
@@ -321,6 +344,10 @@ def smoke(quick: bool = False):
     --quick runs 3 trivials instead of 20 — a cheap liveness check that still
     cold-boots the GPU but skips 17 serial generations. The G1 GATE is the FULL
     run (status.py uses it); use --quick only for a manual "is it alive?".
+
+    --model selects the served model: 'ornith-35b' (base, the G1 gate) or
+    'ornith-lora' (the P4 adapter re-gate — same three assertions on the tuned
+    model before the paired dev run).
     """
     import json
     import time
@@ -328,7 +355,7 @@ def smoke(quick: bool = False):
     trivials = TRIVIALS[:3] if quick else TRIVIALS
     t0 = time.time()
     url = _serve_url()
-    print(f"smoke: endpoint {url} ({'quick' if quick else 'full'})")
+    print(f"smoke: endpoint {url} ({'quick' if quick else 'full'}) model={model}")
     _wait_healthy(url)  # /health is unauthenticated
     print("smoke: endpoint healthy")
     key = _endpoint_key.remote()  # serve()'s /v1/* needs the Bearer key
@@ -340,7 +367,8 @@ def smoke(quick: bool = False):
     passed = 0
     for i, (prompt, expect) in enumerate(trivials, 1):
         try:
-            resp = _chat(url, [{"role": "user", "content": prompt}], api_key=key)
+            resp = _chat(url, [{"role": "user", "content": prompt}], api_key=key,
+                         model=model)
             msg = resp["choices"][0]["message"]
             content = msg.get("content") or ""
         except Exception as e:  # execution error is a smoke failure, not a pass
@@ -364,6 +392,7 @@ def smoke(quick: bool = False):
             tools=[ADD_TOOL],
             tool_choice="auto",
             api_key=key,
+            model=model,
         )
         msg = resp["choices"][0]["message"]
         if "<think>" in (msg.get("content") or ""):
@@ -401,9 +430,10 @@ def smoke(quick: bool = False):
         _sys.path.insert(0, str(Path(__file__).resolve().parent))
         import sweep_stats
         stamp = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
+        mtag = "" if model == "ornith-35b" else f"{_slug(model)}-"
         sweep_stats.append_ledger(
             Path(__file__).resolve().parent.parent / "findings" / "cost-ledger.csv",
-            f"smoke-{'quick-' if quick else ''}{stamp}",
+            f"smoke-{mtag}{'quick-' if quick else ''}{stamp}",
             f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%S}",
             round(elapsed, 1), round(elapsed / 3600 * H100_USD_PER_HOUR, 4))
     except Exception as e:
@@ -818,8 +848,10 @@ def _make_worker(worker_model: str) -> dict:
     The claude-* path spends real Anthropic dollars the budget hook does NOT
     gate, so the spend ack is enforced HERE — the single choke point both
     entrypoints (run_sweep, run_one) route through."""
-    if worker_model == "ornith-35b":
-        return {"model": "ornith-35b", "small_model": "ornith-35b",
+    # Both the base and the P4 LoRA are served on the in-app vLLM+proxy stack
+    # (GPU-attributed). Same routing; only the served-model name differs.
+    if worker_model in ("ornith-35b", "ornith-lora"):
+        return {"model": worker_model, "small_model": worker_model,
                 "base_url": _proxy_url(), "api_key": None,
                 "gpu_attributed": True}
     print("WARNING: worker_model is a hosted Claude model. This spends real "
@@ -873,7 +905,7 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
     import yaml
     parent = yaml.safe_load(manifest.read_text()).get("parent")
 
-    is_ornith = worker_model == "ornith-35b"
+    is_ornith = worker_model in ("ornith-35b", "ornith-lora")
 
     # glob yields the task.yaml FILES; _load_spec wants the task DIRECTORY.
     task_dirs = sorted(p.parent for p in (root / "tasks" / split).glob("*/task.yaml"))
@@ -992,7 +1024,7 @@ def run_one(task_id: str, variant: str = "v001-baseline",
 
     cfg_tar = _tar_config(variant_dir)
     worker = _make_worker(worker_model)
-    if worker_model == "ornith-35b":
+    if worker_model in ("ornith-35b", "ornith-lora"):
         _wait_healthy(_serve_url())
     ts = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
     result = run_trial.remote(spec, cfg_tar, 0, f"one-{ts}-{task_id}", worker)
