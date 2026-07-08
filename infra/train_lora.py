@@ -41,7 +41,10 @@ _DEFAULT_SFT_PATH = (
 SFT_PATH = os.environ.get("SFT_PATH", _DEFAULT_SFT_PATH)
 
 MODEL = "deepreinforce-ai/Ornith-1.0-35B"  # bf16 repo (NOT the -FP8 serving one)
-GPU = "H100"
+GPU = "H200"  # escalated from H100: 67GB frozen bf16 base + 32k-seq training
+# activations OOM'd an 80GB H100 by ~7GB even with sdpa + expandable_segments;
+# the base weights are the floor and only 4-bit (ruled out for this arch) would
+# shrink them, so the 141GB H200 is the right lever (preserves all 89 examples).
 MINUTES = 60
 
 app = modal.App("ornith-lora")
