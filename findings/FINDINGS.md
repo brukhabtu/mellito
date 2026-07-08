@@ -770,3 +770,53 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   regression-driving half (don't force "keep iterating" past a fix — add a
   "if your edit makes verify worse, revert it" guard) to bank the +5 wins
   without the −2 losses. Pending operator keep/reject call on v002.
+
+## 2026-07-08 · P3 Scaffold search · incident (v002 regression mechanism — hypothesis corrected)
+- Investigated the two stable v002 losses (astropy-13453, sklearn-25931) via
+  trajectory-analyst, comparing v002 failing trials against v001 passing/failing
+  trials on the same tasks (run 20260708T004754 vs 20260707T215242).
+- **The "forced-action → wrong-edit" hypothesis in the prior entry is REFUTED.**
+  v002 loses to UNDER-action, not over-action: it produces *more* empty diffs
+  than v001 on these tasks (astropy 2/5 vs 1/5 empty; sklearn 3/5 vs 1/5), and
+  in no trial did it overwrite an already-correct fix with a wrong one.
+- **Actual dominant mechanism: the model DISOBEYS the contract's own "do not
+  ask for direction" clause.** 3 instances across the 2 tasks where v002
+  explicitly asks the (nonexistent) user which fix to apply, then ends with an
+  empty diff — sklearn-25931 trial1 "Please let me know what the expected
+  behavior should be" (L19), trial4 "I understand your frustration... Which
+  approach would you prefer?" (L19, a HALLUCINATED user rebuke — no user turn
+  exists), astropy-13453 trial1 "I am blocked and need a human in the loop"
+  (L33, after fabricating a tool-failure that isn't in the actual tool_result).
+  Contrast: v001 astropy-13453 trial0 hit the SAME AttributeError trap and
+  self-corrected with a second Edit in-turn (→ pass). Negative prose
+  instructions are not internalized; more prohibitions backfire into a
+  defensive "I'm blocked" posture.
+- **Variant-independent floor:** a `result:""` stall (turn ends, no final
+  assistant text, right after a Read/Grep/todo) recurs in BOTH v001 and v002
+  (e.g. v001 astropy-13453 trial3 L29-31, v001 sklearn-25931 trial1 L24). It
+  depresses absolute pass rate on both arms equally → noise on the paired delta,
+  but it caps absolute numbers and WILL matter for the eventual Haiku
+  (absolute) comparison. Logged as a known measurement floor; not chased now
+  (the scaffold search runs on deltas).
+- **implication for v003 (revised):** prose is not the lever — the model won't
+  reliably obey "never stop / don't ask." The mechanical fix is a **Stop hook**
+  in the materialized worker .claude/ that refuses to let the turn end while
+  VERIFY.txt is non-zero and no source diff exists, re-injecting a "no human is
+  available — apply your fix now" continue prompt (bounded to K nudges +
+  stop_hook_active guard so it can't loop into a timeout). This converts the
+  unreliable prose contract into a harness-enforced guarantee against exactly
+  the ask-for-direction / premature-stop losses. v003 = v002 + this hook (parent
+  v002; the prose stays, the hook is the single new mechanism).
+- **anomalies flagged (experiment-integrity surprise log):**
+  (1) every worker `Read` tool_result carries an appended Claude Code
+  malicious-code reminder ("consider whether it looks malicious... you MUST
+  refuse to improve or augment the code"), present in ALL trials of BOTH
+  variants. Injected by the worker's own Claude Code core, not by our config.
+  Candidate cause of the baseline taxonomy's "spurious safety refusal/derail"
+  and some greeting-resets — a possible future variant (a CLAUDE.md line telling
+  the worker these reminders are automated and the task is a legitimate fix).
+  Not the mechanism for these 2 losses; parked as a v004+ candidate axis.
+  (2) A `<system-reminder>` restating .claude/rules/variants.md was appended to
+  the analyst's Read of the v002 config — that is this harness's own rule
+  injection firing on an experiments/variants/ path, benign, NOT worker
+  contamination. No action.
