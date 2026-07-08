@@ -16,4 +16,10 @@ hypothesis: >-
   gain is <5 points or shows up on already-solved tasks rather than the
   harness-friction set, the self-direction thesis is wrong and v002 is rejected.
 date: 2026-07-08
-status: evaluated
+status: rejected
+# rejected: net +3 paired vs v001 (clean run 20260708T004754), below the +5 MDD
+# floor. Self-direction axis CONFIRMED (reproducible wins on harness-friction
+# tasks, e.g. pytest-7571 1/5->4/5 both runs) but the contract's "keep
+# iterating past a fix" clause causes 2 stable regressions. v003 carries the
+# axis forward, keeping the empty-diff/act-don't-describe half and adding a
+# verify-before-done / revert-if-worse guard.
