@@ -988,3 +988,31 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   no run_trial/parse_stream_json change needed.
 - Phase 0 gate PASSED. Proceeding to Phase 1 (full v002 40×5 recapture with
   thinking) → data prep → bf16 LoRA. No LiteLLM version bump needed.
+
+## 2026-07-08 · P4 LoRA · run + data-prep (think-preserving recapture → SFT dataset)
+- recapture run `20260708T132147-v002-completion-contract` (v002 40×5, hosted_vllm/ capture on): **127 pass / 67
+  fail / 6 invalid**. Passing count up from ~105 (prior action-only v002 runs) —
+  and **every passing trajectory now carries thinking** (0 dropped for
+  no-thinking in export). This is the training-data run.
+- data-prep via `infra/export_trajectories.py` (cap 3/task): **89 SFT examples
+  across 33 tasks** from the 127 passing trials (38 dropped by the per-task cap,
+  0 no-thinking, 0 missing). Token proxy (char/4) ~1.33M: assistant targets
+  ~555k (the trainable signal under assistant_only_loss), tool-results ~702k
+  (masked), system ~38k, user ~36k. Per-task: mostly at the cap of 3; a few hard
+  tasks at 1 (12039, 14182, 6386, 8898, 10051 — solved once).
+- example shape verified: system=v002 CLAUDE.md → user=task desc → assistant
+  [thinking,text,tool_use] → tool(result) → … ; thinking real, signature
+  dropped, tool_use name+input intact. Anthropic content-block shape kept so the
+  trainer applies the model's qwen3_xml template (train==inference serialization).
+- **known fidelity gaps (flagged for the training gate):** (1) system target is
+  the v002 worker prompt only — Claude Code's base system prompt + tool JSON
+  schemas were present at serving but absent from -p-mode transcripts, so
+  training conditions on strictly less than inference; (2) the user task is
+  reconstructed from task.yaml description (not byte-identical to what CC sent).
+  Both are conditioning-only (masked, no loss); the assistant TARGETS are
+  faithful. A proxy-request-logging upgrade would close (1)/(2) for max fidelity.
+- 89 examples is on the low end but in-regime for a behavioral LoRA (LIMA: a few
+  hundred high-quality examples suffice for behavior/format alignment on
+  capabilities the base already has). Raising the cap toward 4-5 would yield
+  ~110-127 examples if more volume is wanted.
+- STOP gate: dataset ready; operator go/no-go before GPU training (Phase 3).
