@@ -19,4 +19,9 @@ hypothesis: >-
   the "make it act" thesis is exhausted and the next axis is the per-Read
   malicious-code-reminder derail (parked v004 candidate).
 date: 2026-07-08
-status: proposed
+status: rejected
+# rejected: net +2 paired vs v001 (run 20260708T015417), below +5 MDD floor and
+# within noise of parent v002 (net -1 vs v002). Stop hook fires correctly but
+# the 2 target losses are capability-bound (forced edit is wrong, not a
+# recoverable stall) and a portion of empty_diff is an un-hookable SDK stall.
+# Self-direction axis exhausted at ~+3. Strike 2 of the stopping rule.

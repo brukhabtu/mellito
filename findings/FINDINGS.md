@@ -820,3 +820,46 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   the analyst's Read of the v002 config — that is this harness's own rule
   injection firing on an experiments/variants/ path, benign, NOT worker
   contamination. No action.
+
+## 2026-07-08 · P3 Scaffold search · run (v003-stop-hook-enforce — mechanical gate)
+- variant: v003-stop-hook-enforce (parent v002) — hypothesis: a Stop hook that
+  refuses to end the worker turn on an empty diff will recover the 2 v002
+  capability... (see manifest) — recover the 2 v002 losses + hold the wins →
+  net ≥+5 vs v001.
+- validation first (run_one on sklearn-25931, tag one-20260708T015150): **the
+  Stop hook FIRES in the worker sandbox under --dangerously-skip-permissions** —
+  transcript L29 shows the injected "no source file has been edited... apply your
+  fix now" block, and the worker resumed and made an Edit at L32 (v002 stalled
+  empty here). Integration risk cleared: project .claude/settings.json hooks work.
+- run: `20260708T015417-v003-stop-hook-enforce` · 40 dev · 5 trials · 0 invalid.
+- result: solved 22/40 = 55%; trial-level 102/200. **paired vs v001: 4 wins /
+  2 losses / 34 ties, net +2.** paired vs parent v002: 1/2/37, **net −1**.
+  $/solved $0.073.
+- **hypothesis FALSIFIED.** The hook works mechanically but does not help:
+  - the 2 target losses did NOT recover: astropy-13453 1/5, sklearn-25931 1/5
+    (unchanged from v002). The hook forces an edit, but the edit is wrong —
+    `verify_exit_nonzero` replaces `empty_diff`. These are capability-bound
+    (wrong fix), not addressable stalls. Mark them escalation-tier.
+  - empty_diff persists (25/200) despite a hard gate — trials either exhausted
+    the 4-nudge cap still refusing, or hit the variant-independent `result:""`
+    SDK stall that ends the turn without a Stop event the hook can catch. A
+    portion of stalling is not scaffold-controllable.
+  - vs v002 the movement is within run-to-run noise (±2-pass swings seen before,
+    e.g. django-11239 4→2, sklearn-13496 3→1 down; astropy-12907 3→4 up). Net −1
+    vs parent = no real effect; the hook neither clearly helps nor hurts.
+- interpretation: **the self-direction axis is exhausted at ~+2-3.** v002 prose
+  (+3) ≈ v003 hard-gate (+2), both < +5 MDD floor. Forcing action converts
+  capability-limited stalls into capability-limited wrong-edits (same fail
+  verdict). The residual is genuine model capability (43% of the taxonomy) plus
+  an un-hookable SDK stall floor — neither is a prompt/loop-control target.
+- decision-rule states: MDD — net +2 < +5 → **not kept.** dev/holdout n/a (G4).
+  contamination n/a (all-public dev). kill criterion n/a (Haiku deferred).
+- verdict: **rejected (net +2, below floor; within noise of parent).** Stopping
+  rule: this is **strike 2** of 3 consecutive non-keeps (v002 strike 1). The
+  self-direction axis has now been tried two ways (prose, mechanical) and caps
+  at +3. Next axis (v004, strike 3) is DISTINCT: the per-Read malicious-code
+  reminder that pollutes every worker context — candidate cause of the
+  baseline's spurious-refusal / greeting-reset derails, untouched by either
+  self-direction variant. If v004 also misses +5, the stopping rule fires →
+  reassess P3-vs-P4(LoRA) with the operator (the taxonomy's 43% capability
+  suggests a scaffold ceiling that LoRA, not more prompting, must break).
