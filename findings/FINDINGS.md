@@ -906,3 +906,34 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   prompt minimal (the meta-finding says do NOT add scaffold prose). Pending
   operator go/no-go on the P3→P4 transition — a training-resource decision the
   operator owns; not started autonomously.
+
+## 2026-07-08 · P4 LoRA · incident (training-data audit: reasoning not captured)
+- P4 go/no-go prep. Audited the passing-trajectory pool for LoRA SFT across all
+  5 Ornith runs (baseline 20260707T215242 + v002×2 + v003 + v004).
+- volume: **509 passing trials, 34/40 distinct dev tasks covered**; 6 tasks never
+  solved by any run (astropy-14182, django-10999, django-12193, pylint-4551/
+  4604/6386 — no positive data → LoRA cannot teach these). Distribution is
+  redundant (many easy tasks at 20-25 passes) but has real spread. Enough volume
+  for a behavioral QLoRA if deduped/capped per task.
+- **BLOCKER surprise: the transcripts contain ZERO `<think>` reasoning.** Every
+  passing transcript records text + tool_use + tool_result at full fidelity but
+  no thinking block (verified on django-12419 pass: 0 thinking / 14 tool_use).
+  Root cause is by-design: serve() runs `--reasoning-parser qwen3` which strips
+  `<think>` into a separate `reasoning_content` field (the G1 smoke gate checks
+  think does NOT leak into content), and the LiteLLM proxy drops reasoning_content
+  rather than mapping it to an Anthropic thinking block, so Claude Code never
+  records it. Reasoning existed at generation time but was never persisted.
+- **why this matters:** PLAN §P4 specifies "`<think>` preserved in targets."
+  Ornith is a reasoning model whose value is self-scaffolding; SFT on
+  action-only (think-stripped) targets risks a train/inference mismatch that
+  degrades the reasoning it still does at inference. Training on what we have is
+  PLAN-deviating and risky for this model class.
+- options (operator decision — the P4 approach + a small GPU recapture cost):
+  1. RECAPTURE (PLAN-faithful, recommended): map reasoning_content→Anthropic
+     thinking in the LiteLLM proxy (infra change, OK now — P3 converged, between
+     cycles), re-run the 34 solved dev tasks to collect think-preserving passing
+     trajectories (~$1-2, ~20 min), then LoRA on those.
+  2. LoRA on think-stripped data (cheaper, riskier, PLAN-deviating).
+  3. reconsider the rung given the added recapture step.
+- no code built yet; export/data-prep tooling deferred until the reasoning fork
+  is decided (it sets the SFT target format).
