@@ -1,0 +1,332 @@
+{
+  "run_id": "20260708T004754-v002-completion-contract",
+  "variant": "v002-completion-contract",
+  "parent": "v001-baseline",
+  "tasks": 40,
+  "valid_tasks": 40,
+  "solved_tasks": 23,
+  "pass_rate_over_tasks": 0.575,
+  "pass_rate_ci95": [
+    0.422,
+    0.715
+  ],
+  "paired_vs_parent": {
+    "comparable_tasks": 40,
+    "wins": 5,
+    "losses": 2,
+    "ties": 33,
+    "net_tasks": 3
+  },
+  "by_provenance": {
+    "public-pretrained": {
+      "tasks": 40,
+      "valid_tasks": 40,
+      "solved": 23,
+      "solved_rate": 0.575,
+      "ci95": [
+        0.422,
+        0.715
+      ]
+    }
+  },
+  "cost": {
+    "gpu_seconds": 1706.3,
+    "usd": 1.8722,
+    "api_usd": 0.0,
+    "usd_per_solved_task": 0.0814,
+    "gpu_attribution": {
+      "per_trial": "tokens_out/908",
+      "ledger": "max(sum, wall)"
+    },
+    "tokens_in": 83787329,
+    "tokens_out": 1549354,
+    "trials": 200,
+    "valid_trials": 200,
+    "invalid_trials": 0,
+    "mean_wall_s": 179.5
+  },
+  "per_task": {
+    "astropy__astropy-12907": {
+      "passes": 3,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.6,
+      "provenance": "public-pretrained"
+    },
+    "astropy__astropy-13453": {
+      "passes": 1,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.2,
+      "provenance": "public-pretrained"
+    },
+    "astropy__astropy-14182": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "astropy__astropy-14365": {
+      "passes": 1,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.2,
+      "provenance": "public-pretrained"
+    },
+    "astropy__astropy-7166": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "astropy__astropy-7671": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "django__django-10973": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "django__django-10999": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "django__django-11066": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "django__django-11119": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "django__django-11206": {
+      "passes": 1,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.2,
+      "provenance": "public-pretrained"
+    },
+    "django__django-11239": {
+      "passes": 3,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.6,
+      "provenance": "public-pretrained"
+    },
+    "django__django-11333": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "django__django-12039": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "django__django-12050": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "django__django-12155": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "django__django-12193": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "django__django-12209": {
+      "passes": 1,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.2,
+      "provenance": "public-pretrained"
+    },
+    "django__django-12419": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "django__django-13023": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "pydata__xarray-3677": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "pydata__xarray-4966": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "pylint-dev__pylint-4551": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "pylint-dev__pylint-4604": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "pylint-dev__pylint-4970": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "pylint-dev__pylint-6386": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "pylint-dev__pylint-6903": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "pylint-dev__pylint-8898": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "pytest-dev__pytest-10051": {
+      "passes": 1,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.2,
+      "provenance": "public-pretrained"
+    },
+    "pytest-dev__pytest-5631": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "pytest-dev__pytest-5809": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "pytest-dev__pytest-7571": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "scikit-learn__scikit-learn-10844": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "scikit-learn__scikit-learn-12585": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "scikit-learn__scikit-learn-13328": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "scikit-learn__scikit-learn-13496": {
+      "passes": 3,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.6,
+      "provenance": "public-pretrained"
+    },
+    "scikit-learn__scikit-learn-13779": {
+      "passes": 4,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.8,
+      "provenance": "public-pretrained"
+    },
+    "scikit-learn__scikit-learn-14141": {
+      "passes": 5,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "scikit-learn__scikit-learn-25747": {
+      "passes": 0,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "scikit-learn__scikit-learn-25931": {
+      "passes": 1,
+      "valid": 5,
+      "invalid": 0,
+      "pass_rate": 0.2,
+      "provenance": "public-pretrained"
+    }
+  },
+  "worker_model": "ornith-35b",
+  "partial": false
+}

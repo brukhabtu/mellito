@@ -733,3 +733,40 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   by 8 infra-flaked trials. Recommend a clean re-run of v002 (the flake was
   Modal-side, not the variant) to settle +4 vs +5 before a keep/reject commit —
   ~$1.6 / 30 min. Not kept, not rejected, pending that.
+
+## 2026-07-08 · P3 Scaffold search · run (v002 clean re-run — authoritative)
+- Re-ran v002-completion-contract to settle the +4-vs-+5 question after the
+  first run's 8 sklearn sandbox-create flakes. run:
+  `20260708T004754-v002-completion-contract` · 40 dev · 5 trials.
+- **0 invalid / 200** — confirms the earlier 8 `worker_sandbox_create_failed`
+  were pure Modal infra flake (sklearn image), nothing to do with the variant.
+  All 40 tasks comparable this time.
+- result: solved 23/40 = 57.5%; trial-level clean. **paired vs v001:
+  5 wins / 2 losses / 33 ties, net_tasks +3.** $/solved $0.081.
+- cross-run stability (baseline → run1 → run2, passes/valid):
+  - **stable wins (both runs), all on predicted harness-friction tasks:**
+    pytest-7571 1/5→4/5→4/5 (baseline 4/4 hf — the clean confirmation);
+    astropy-12907 2→4→3; django-11239 2→4→3; django-13023 1/4→3→4;
+    sklearn-13496 2/5→(2/4 artifact)→3/5 (genuine in the clean run).
+  - **stable losses:** astropy-13453 3/5→1/5→1/5 (regressed both runs);
+    sklearn-25931 4/5→(flaked)→1/5 (genuine 3-step regression once it ran).
+  - noisy: django-11206 1→3→1 (win in run1, reverted in run2 — run-to-run
+    variance of ~2 passes exists on mid-tasks; treat single-run crossings with
+    caution).
+- interpretation: **the self-direction thesis is CONFIRMED directionally** —
+  the completion contract reproducibly converts harness-friction stalls into
+  passes on the predicted tasks (pytest-7571 the exemplar). But it also has a
+  real downside: on ~2 tasks the "act, don't describe / keep iterating" pressure
+  turns baseline careful-stops into confident wrong edits (astropy-13453 stable
+  regression). Net of the two effects is **+3, below the +5 MDD floor.**
+- decision-rule states: MDD — net +3 < +5 → **does not clear the keep bar.**
+  dev/holdout gap n/a (G4). contamination tripwire n/a (all-public dev).
+  kill criterion n/a (Haiku deferred).
+- verdict: **not kept (sub-threshold), axis validated.** This is stopping-rule
+  strike 1 — BUT the failure is instructive, not a dead end: v002 proved
+  self-direction is the right axis and localized the cost (forced-action
+  regressions). The indicated v003 keeps the win-driving half of the contract
+  (never end with an empty diff; act don't describe) and removes the
+  regression-driving half (don't force "keep iterating" past a fix — add a
+  "if your edit makes verify worse, revert it" guard) to bank the +5 wins
+  without the −2 losses. Pending operator keep/reject call on v002.
