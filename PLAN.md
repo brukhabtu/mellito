@@ -60,7 +60,24 @@ findings/FINDINGS.md. Summary of where the project stands:
   The full 40×5 **Ornith v001 baseline** is DONE (run `20260707T215242-v001-baseline`):
   **20/40 dev tasks solved = 50%** (CI [35, 65]), $0.086/solved, 1 invalid/200.
   This is the reference every scaffold variant pairs against.
-- **G4–G6 — not started.**
+- **G4 Optimized scaffold — P3 search converged, gate NOT met by scaffold
+  alone.** Three mutations tried, all rejected on the pre-committed +5 MDD floor
+  (paired vs v001): v002-completion-contract (self-direction prose) **+3**,
+  v003-stop-hook-enforce (mechanical empty-diff gate) **+2**, v004-localization-
+  discipline (trace-before-edit prose) **0**. The stopping rule (3 consecutive
+  non-keeps) has fired. Key result: **scaffold complexity is inversely correlated
+  with Ornith's performance** — the shortest high-agency prompt (v002) is the
+  peak at +3, every added mechanism/instruction did worse, and the targeted
+  wrong-file capability cluster proved completely prompt-immune (v004 moved it
+  zero). The residual failure mass is model-level (43% capability + variant-
+  independent greeting-resets and a `result:""` SDK-stall floor), not scaffold-
+  addressable. No variant cleared the keep bar, so there is nothing to confirm on
+  the single holdout run; G4 stays open. Runs: `20260708T004754` (v002 clean),
+  `20260708T015417` (v003), `20260708T030102` (v004). See findings/FINDINGS.md.
+- **G5–G6 — not started.** P4 (LoRA) is now the indicated rung: QLoRA on the
+  v002 verifier-passing trajectories to attack the capability wall the scaffold
+  can't move, worker prompt kept minimal per the complexity meta-finding.
+  Operator go/no-go on the P3→P4 transition pending.
 
 ### Sequencing decision (2026-07-08, operator-directed)
 
