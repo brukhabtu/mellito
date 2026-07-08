@@ -1016,3 +1016,30 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   capabilities the base already has). Raising the cap toward 4-5 would yield
   ~110-127 examples if more volume is wanted.
 - STOP gate: dataset ready; operator go/no-go before GPU training (Phase 3).
+
+## 2026-07-08 · P4 LoRA · run (bf16 LoRA trained — adapter lora-20260708T162249)
+- Trained a rank-32 bf16 LoRA on the 89-example think-preserving SFT set.
+  Adapter: `ornith-adapters/lora-20260708T162249`. Config: r=32, α=64,
+  target_modules=[q_proj,k_proj,v_proj,o_proj] (attention only; MoE router
+  `mlp.gate`/`shared_expert_gate` and GDN/Mamba mixer EXCLUDED — verified by the
+  named_modules guard), assistant_only_loss, 2 epochs, lr 1e-4 cosine,
+  max_length 32768 (0/89 filtered — all fit), TRL+PEFT (Unsloth absent by
+  design; the hybrid arch registers directly via transformers trust_remote_code).
+- **final train loss 0.258**, token-accuracy ~0.94 throughout, grad_norm small
+  and stable — healthy behavioral-cloning fit (high accuracy expected: the
+  targets are the model's OWN passing outputs). ~80 min / 24 steps.
+- **Step-A pre-flight paid off**: caught (a) tool arguments must be a DICT for
+  Ornith's qwen3 template (`arguments|items`), not a JSON string; (b) the real
+  template uses `message.role` attribute-form so the generic patcher can't splice
+  it → shipped a committed `infra/ornith_chat_template.jinja`, verified LOCALLY
+  to render byte-identical to stock with an assistant-only mask (36%, covers
+  <think>+text+tool_call, excludes tool_response/system/user).
+- infra surprises (logged, not worked around): (1) 1×H100 80GB OOMs — 67GB
+  frozen bf16 base leaves too little for 32k-seq activations; fixed load-OOM with
+  sdpa (eager materializes the N×N score matrix) + expandable_segments, but the
+  training step still OOM'd by ~7GB → escalated to H200 141GB (the approved
+  lever; base weights are the floor, 4-bit ruled out for this arch). (2) The
+  earlier char/4 length proxy overestimated — actual tokenized lengths are all
+  ≤32k, so no examples were filtered.
+- next: Phase 4 — serve the adapter (vLLM --lora-modules; merge→requantize
+  fallback), re-gate smoke → dev paired vs v001/v002 → holdout.
