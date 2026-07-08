@@ -20,4 +20,8 @@ hypothesis: >-
   non-keeps: v002, v003, v004) and the search converges to a scaffold ceiling of
   ~+3, indicating P4 (LoRA) as the rung that must break the capability wall.
 date: 2026-07-08
-status: proposed
+status: rejected
+# rejected: net 0 paired vs v001 (run 20260708T030102), net -3 vs parent v002.
+# The targeted wrong-file cluster did not move at all (capability, not prompt-
+# fixable); added prose degraded v002. Strike 3 -> P3 stopping rule fires; the
+# scaffold search has converged at a +3 ceiling (v002), below the +5 gate.

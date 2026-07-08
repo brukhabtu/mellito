@@ -863,3 +863,46 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   self-direction variant. If v004 also misses +5, the stopping rule fires →
   reassess P3-vs-P4(LoRA) with the operator (the taxonomy's 43% capability
   suggests a scaffold ceiling that LoRA, not more prompting, must break).
+
+## 2026-07-08 · P3 Scaffold search · run (v004-localization-discipline — strike 3)
+- variant: v004-localization-discipline (parent v002) — hypothesis: a
+  reproduce-and-trace-before-editing section converts the wrong-file capability
+  cluster (django-12193/12039/11333) to passes → net ≥+5 vs v001.
+- run: `20260708T030102-v004-localization-discipline` · 40 dev · 5 trials · 0
+  invalid. (First launch was interrupted by a container restart before it wrote
+  a summary — no partial data entered stats; clean re-run.)
+- result: solved 20/40 = 50% (= baseline). **paired vs v001: 2 wins / 2 losses
+  / 36 ties, net 0.** paired vs parent v002: 0 wins / 3 losses / 37 ties,
+  **net −3.** $/solved $0.109.
+- **hypothesis FALSIFIED, decisively.** The wrong-file cluster did not move at
+  all: django-12193 0/5→0/5 (v002)→0/5; django-12039 1/5→0/5→0/5; django-11333
+  1/5→0/5→1/5. The localization prose redirected zero wrong-file edits — these
+  are genuine capability failures (the model cannot localize correctly even when
+  explicitly instructed to reproduce and trace). And the added prose HURT: v004
+  solved 20 vs v002's 23 (−3 paired vs parent), i.e. lengthening the worker
+  CLAUDE.md degraded performance.
+- **META-FINDING (the shape of the whole search): scaffold complexity is
+  inversely related to Ornith's performance.** Monotone decline as we add to the
+  worker instructions: v002 (shortest self-direction prose) +3 > v003 (+ Stop
+  hook) +2 > v004 (+ localization prose) 0. The simplest intervention is the
+  peak; every added mechanism or instruction does worse. Ornith's weights want a
+  short, high-agency prompt and their own inner loop — exactly PLAN's P3
+  prediction — but the ceiling that buys is only +3, below the +5 gate.
+- decision-rule states: MDD — net 0 < +5 → **not kept.** dev/holdout n/a (G4).
+  contamination n/a (all-public dev). kill criterion n/a (Haiku deferred; not a
+  kill point — that's post-LoRA).
+- verdict: **rejected (net 0). STOPPING RULE FIRES** — 3 consecutive non-keeps
+  (v002 +3, v003 +2, v004 0). **P3 scaffold search has converged.** Best
+  scaffold = v002 (+3 vs v001), which does NOT clear G4's ≥+5 bar. No variant is
+  keepable, so there is nothing to confirm on holdout; G4 is NOT met by scaffold
+  search alone.
+- **P3 → P4 handoff (the evidence-based conclusion):** the residual failure mass
+  is model-level, not scaffold-level — 43% capability (wrong-file/wrong-branch,
+  proven prompt-immune by v004), plus greeting-resets and an un-hookable
+  `result:""` SDK-stall floor (both variant-independent). This is precisely the
+  "scaffold plateaued, capability is the wall" condition PLAN's P4 (LoRA) rung
+  targets. Recommended next rung: QLoRA on the verifier-passing trajectories
+  under v002 (the best scaffold and the training-data base), keeping the worker
+  prompt minimal (the meta-finding says do NOT add scaffold prose). Pending
+  operator go/no-go on the P3→P4 transition — a training-resource decision the
+  operator owns; not started autonomously.
