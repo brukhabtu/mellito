@@ -75,6 +75,9 @@ preflight_image = (
     .pip_install("transformers", "jinja2", "huggingface_hub", "hf_transfer")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .add_local_python_source("chat_template_adapt", "export_trajectories")
+    .add_local_file(
+        os.path.join(os.path.dirname(__file__), "ornith_chat_template.jinja"),
+        "/ornith_chat_template.jinja")
 )
 
 # Training image: TRL+PEFT (the arch-agnostic path). Research indicates Unsloth
@@ -99,6 +102,9 @@ train_image = (
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .add_local_python_source("chat_template_adapt", "export_trajectories")
     .add_local_file(SFT_PATH, "/data/sft.jsonl")
+    .add_local_file(
+        os.path.join(os.path.dirname(__file__), "ornith_chat_template.jinja"),
+        "/ornith_chat_template.jinja")
 )
 
 
@@ -170,14 +176,37 @@ def preflight_template(samples):
     )
     tok = AutoTokenizer.from_pretrained("/tok", trust_remote_code=True)
 
-    template = tok.chat_template
-    if template is None:
+    stock = tok.chat_template
+    if stock is None:
         raise SystemExit("preflight FAIL: tokenizer has no chat_template")
 
-    had_markers = cta.has_generation_markers(template)
-    patched = template if had_markers else cta.patch_template(template)
-    print(f"[preflight] stock template had generation markers: {had_markers}; "
-          f"{'unchanged' if had_markers else 'patched to add them'}")
+    # Ornith's stock template uses `message.role == "assistant"` attribute-form
+    # and emits the header+think+content in one expression, which the generic
+    # cta.patch_template can't splice. We ship a hand-patched copy
+    # (infra/ornith_chat_template.jinja) verified locally to render BYTE-IDENTICAL
+    # to stock (the generation markers add no output) with an assistant-only mask
+    # that covers <think>+text+tool_call and excludes tool_response/system/user.
+    # The gate here re-asserts that byte-identity against the live model template,
+    # so a silent upstream template change is caught before any GPU spend.
+    if cta.has_generation_markers(stock):
+        patched = stock
+        print("[preflight] stock template already has generation markers")
+    else:
+        with open("/ornith_chat_template.jinja") as f:
+            patched = f.read()
+        # byte-identical-render safety check on the first sample
+        m0 = cta.anthropic_to_template_messages(samples[0]["messages"])
+        tok.chat_template = stock
+        s_txt = tok.apply_chat_template(m0, tokenize=False)
+        tok.chat_template = patched
+        p_txt = tok.apply_chat_template(m0, tokenize=False)
+        if s_txt != p_txt:
+            raise SystemExit("preflight FAIL: committed patched template does not "
+                             "render byte-identical to the model's stock template "
+                             "— the upstream chat_template changed; re-patch "
+                             "infra/ornith_chat_template.jinja")
+        print("[preflight] committed patched template renders byte-identical to "
+              "stock; generation markers added")
 
     reports = []
     all_ok = True
@@ -291,12 +320,19 @@ def train_lora(sft_path_in_image="/data/sft.jsonl", epochs=2, lr=1e-4,
             trust_remote_code=True, attn_implementation="eager")
 
     # --- install the patched chat template (assistant_only_loss markers) -----
-    template = tokenizer.chat_template
-    if template is None:
+    # Use the committed, preflight-verified patched template (byte-identical to
+    # stock, adds only the generation markers). preflight_template is the gate
+    # that proves this against the live model template.
+    stock = tokenizer.chat_template
+    if stock is None:
         raise SystemExit("train FAIL: tokenizer has no chat_template")
-    if not cta.has_generation_markers(template):
-        template = cta.patch_template(template)
-        print("[train] patched chat_template to add generation markers")
+    if cta.has_generation_markers(stock):
+        template = stock
+    else:
+        with open("/ornith_chat_template.jinja") as f:
+            template = f.read()
+        print("[train] installed committed patched chat_template "
+              "(generation markers for assistant_only_loss)")
     tokenizer.chat_template = template
 
     # --- load + shape the SFT set -------------------------------------------

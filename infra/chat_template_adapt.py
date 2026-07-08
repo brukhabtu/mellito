@@ -15,7 +15,7 @@ WHY this module exists (P4 LoRA data-prep, the train==inference invariant):
      OpenAI-ish dict shape the STOCK template consumes. The load-bearing detail
      is that this must match what the LiteLLM proxy hands vLLM at inference:
      reasoning goes in `reasoning_content`, tool calls in an OpenAI `tool_calls`
-     list with json-string `arguments`, tool results in a flat `role: tool`
+     list with DICT `arguments`, tool results in a flat `role: tool`
      message with `tool_call_id`. If training fed the model a different shape
      than inference, the LoRA would learn a template mismatch, not the task.
 
@@ -83,7 +83,7 @@ def anthropic_to_template_messages(messages):
           content          = joined `text` blocks (or "")
           reasoning_content = joined `thinking` blocks   (omitted if empty)
           tool_calls        = [{"id","type":"function",
-                                "function":{"name","arguments":json.dumps(input)}}]
+                                "function":{"name","arguments":<input dict>}}]
                               (omitted if empty)
       - tool(block list) -> ONE dict per tool_result:
           {"role":"tool","tool_call_id":<tool_use_id>,"content":<result as str>}
@@ -119,10 +119,13 @@ def anthropic_to_template_messages(messages):
                         "type": "function",
                         "function": {
                             "name": b.get("name"),
-                            # vLLM's qwen3_xml parser emits, and the proxy sends,
-                            # the tool arguments as a JSON *string*, never a dict.
-                            "arguments": json.dumps(b.get("input") or {},
-                                                    ensure_ascii=False),
+                            # Ornith's qwen3 chat template renders each tool call
+                            # by iterating `arguments|items` (`<parameter=k>v</...`),
+                            # so it needs a DICT, not a JSON string. Our tool_use
+                            # `input` is already the arg dict — pass it through.
+                            # (The template per-value does `x|string if string
+                            # else x|tojson`, so nested values render correctly.)
+                            "arguments": b.get("input") or {},
                         },
                     })
             asst = {"role": "assistant", "content": "".join(text_parts)}

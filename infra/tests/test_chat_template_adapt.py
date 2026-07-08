@@ -47,14 +47,12 @@ def test_assistant_maps_thinking_text_and_tool_use():
     # thinking -> reasoning_content, text -> content
     assert asst["reasoning_content"] == "let me reason"
     assert asst["content"] == "I'll read a file."
-    # tool_use -> OpenAI tool_calls with JSON-STRING arguments
+    # tool_use -> OpenAI-shaped tool_calls with DICT arguments (Ornith's qwen3
+    # template iterates `arguments|items`, so it needs a mapping, not a string).
     assert asst["tool_calls"] == [{
         "id": "chatcmpl-tool-1", "type": "function",
-        "function": {"name": "Read",
-                     "arguments": json.dumps({"file_path": "/x.py"})},
+        "function": {"name": "Read", "arguments": {"file_path": "/x.py"}},
     }]
-    assert json.loads(asst["tool_calls"][0]["function"]["arguments"]) == \
-        {"file_path": "/x.py"}
 
     # tool_result -> flat role:tool with tool_call_id
     tool = out[3]
