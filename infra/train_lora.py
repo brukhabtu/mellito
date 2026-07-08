@@ -99,7 +99,9 @@ train_image = (
         "huggingface_hub",
         "hf_transfer",
     )
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1",
+          # reduce allocator fragmentation on the memory-tight H100
+          "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .add_local_python_source("chat_template_adapt", "export_trajectories")
     .add_local_file(SFT_PATH, "/data/sft.jsonl")
     .add_local_file(
@@ -315,9 +317,21 @@ def train_lora(sft_path_in_image="/data/sft.jsonl", epochs=2, lr=1e-4,
         from transformers import AutoModelForCausalLM, AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(
             weights_dir, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(
-            weights_dir, torch_dtype=torch.bfloat16,
-            trust_remote_code=True, attn_implementation="eager")
+        # sdpa (not eager): eager materializes the full N×N attention score
+        # matrix, which OOMs at 32k seq on the 80GB H100 (weights alone are
+        # ~67GB). sdpa is flash-style / memory-efficient (O(N) activation) and
+        # only affects the few full-attention layers — the GDN/Mamba mixer layers
+        # use their own path and are unaffected. Falls to eager only if the
+        # custom modeling code rejects sdpa.
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                weights_dir, torch_dtype=torch.bfloat16,
+                trust_remote_code=True, attn_implementation="sdpa")
+        except (ValueError, Exception) as _sdpa_err:  # noqa: BLE001
+            print(f"[train] sdpa unavailable ({_sdpa_err}); using eager")
+            model = AutoModelForCausalLM.from_pretrained(
+                weights_dir, torch_dtype=torch.bfloat16,
+                trust_remote_code=True, attn_implementation="eager")
 
     # --- install the patched chat template (assistant_only_loss markers) -----
     # Use the committed, preflight-verified patched template (byte-identical to
