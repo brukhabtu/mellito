@@ -156,19 +156,22 @@ def proxy():
             {
                 "model_name": "ornith-35b",
                 "litellm_params": {
-                    "model": "openai/ornith-35b",
+                    # `hosted_vllm/` (NOT generic `openai/`) is the provider that
+                    # lifts vLLM's `reasoning_content` onto the streamed delta.
+                    # The generic openai/ transformer does not, so the Anthropic
+                    # /v1/messages adapter's reasoning->thinking branch never
+                    # fired and transcripts captured 0 thinking blocks (needed for
+                    # P4 LoRA targets). The adapter itself already emits thinking
+                    # blocks from reasoning_content in litellm 1.91 — it just
+                    # needs the vLLM provider to populate it. See FINDINGS
+                    # 2026-07-08 P4 recapture incident + research.
+                    "model": "hosted_vllm/ornith-35b",
                     "api_base": f"{serve_url}/v1",
                     "api_key": os.environ["VLLM_API_KEY"],
                 },
-                # Ornith is a reasoning model; vLLM's qwen3 reasoning-parser
-                # returns <think> as a separate `reasoning_content` field. Tell
-                # LiteLLM to treat this custom openai/ endpoint as
-                # reasoning-capable so the /v1/messages (Anthropic) route
-                # renders that reasoning as `thinking` content blocks — which
-                # Claude Code then records in the stream-json transcript. Without
-                # this, reasoning_content is dropped and transcripts capture only
-                # actions, not thinking (needed for P4 LoRA targets). See
-                # FINDINGS 2026-07-08 P4 data audit.
+                # Capability tag: gates request-side thinking->reasoning_effort
+                # mapping + token accounting. Necessary but not sufficient on its
+                # own (the provider prefix above is the load-bearing change).
                 "model_info": {"supports_reasoning": True},
             }
         ],
