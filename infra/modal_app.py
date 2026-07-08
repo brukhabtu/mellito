@@ -160,8 +160,21 @@ def proxy():
                     "api_base": f"{serve_url}/v1",
                     "api_key": os.environ["VLLM_API_KEY"],
                 },
+                # Ornith is a reasoning model; vLLM's qwen3 reasoning-parser
+                # returns <think> as a separate `reasoning_content` field. Tell
+                # LiteLLM to treat this custom openai/ endpoint as
+                # reasoning-capable so the /v1/messages (Anthropic) route
+                # renders that reasoning as `thinking` content blocks — which
+                # Claude Code then records in the stream-json transcript. Without
+                # this, reasoning_content is dropped and transcripts capture only
+                # actions, not thinking (needed for P4 LoRA targets). See
+                # FINDINGS 2026-07-08 P4 data audit.
+                "model_info": {"supports_reasoning": True},
             }
         ],
+        # NB: do NOT set merge_reasoning_content_in_choices — that folds <think>
+        # back into `content` (reintroduces the leak the parser removes). We want
+        # reasoning as SEPARATE thinking blocks, not merged text.
         "litellm_settings": {"drop_params": True},
     }
     import yaml
