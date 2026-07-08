@@ -968,3 +968,23 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   think-stripped trajectories we now have (PLAN-deviating, reasoning-mismatch
   risk for a reasoning model), OR pause P4 and write up the P3 scaffold-ceiling
   result as the deliverable.
+
+## 2026-07-08 · P4 LoRA · incident-resolved (reasoning capture FIXED via hosted_vllm/)
+- Root-caused the 0-thinking-capture blocker (prior entry) with two research
+  passes: LiteLLM's generic `openai/` provider does not lift vLLM's
+  `reasoning_content` onto the streamed delta, so the Anthropic /v1/messages
+  adapter's reasoning->thinking branch (present and working in 1.91) never
+  fired. `supports_reasoning: true` is only a capability tag, not the lifter.
+- **Fix: route the proxy through vLLM's dedicated provider prefix**
+  `hosted_vllm/ornith-35b` (was `openai/ornith-35b`) — it carries the reasoning
+  normalization. One-word change in proxy(); redeployed.
+- **VERIFIED** (run `20260708T131359-v002-completion-contract-partial`, 1 task ×
+  3 trials, django-11066): 3/3 pass, and **all 3 transcripts now contain
+  thinking blocks** — 5/5/8 blocks, 598-1031 thinking chars each, with coherent
+  task-relevant CoT ("The user is describing a bug in Django's
+  RenameContentType._rename()..."). The worker still solves the task, so the
+  multi-turn thinking round-trip does NOT break the loop (the signature risk
+  flagged earlier is a non-issue). Capture pipeline records thinking unchanged —
+  no run_trial/parse_stream_json change needed.
+- Phase 0 gate PASSED. Proceeding to Phase 1 (full v002 40×5 recapture with
+  thinking) → data prep → bf16 LoRA. No LiteLLM version bump needed.
