@@ -1043,3 +1043,48 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   ≤32k, so no examples were filtered.
 - next: Phase 4 — serve the adapter (vLLM --lora-modules; merge→requantize
   fallback), re-gate smoke → dev paired vs v001/v002 → holdout.
+
+## 2026-07-08 · P4 LoRA · GATE (Phase 4 re-gate — LoRA NOT KEPT, net −2 on dev)
+- **Serving worked** (the make-or-break research risk): vLLM hot-loaded the
+  rank-32 bf16 adapter directly on the hybrid MoE/FP8 base via `--lora-modules`
+  — no merge/requantize fallback needed. `/v1/models` served both `ornith-35b`
+  and `ornith-lora`; proxy exposes both (commit f6c8371).
+- **Smoke re-gate PASSED** on `ornith-lora`: 20/20 trivials, 0 `<think>` leaks,
+  schema-clean tool call. The adapter is not broken — output is coherent, the
+  qwen3 reasoning parser still strips think, tool calls parse.
+- **Dev paired GATE FAILED.** LoRA arm run `20260708T181500-v002-completion-contract`
+  (v002 scaffold, 40×5, worker=ornith-lora): solved **26/40** (rate 0.65),
+  121 pass / 75 fail / 4 invalid. Paired vs the base arm
+  `20260708T132147-v002-completion-contract` (same scaffold/tasks, worker=
+  ornith-35b, 28/40, rate 0.70), via `infra/paired_lora.py`:
+  **+1 / −3 / =36, net −2 over 40 comparable tasks.** PLAN G4 keep gate is
+  ≥+5 → **FAIL** (and MDD: <5 is noise, so this is "no measurable improvement",
+  slightly negative). NOT kept. Holdout NOT unlocked (dev gate already failed;
+  the single unlock is reserved for a variant that passes dev — and holdout is
+  still 0 specs).
+- **This was the in-distribution case** and it still didn't help: the LoRA
+  trained on passing trajectories from 33 of these exact 40 dev tasks, so any
+  memorization should have biased it UP here. Net −2 in-distribution means the
+  behavioral clone did not improve the policy.
+- **Mechanism (not a serving artifact).** The 4 disagreements: WIN pylint-6386
+  (0.2→0.8); LOSS astropy-13453 (0.6→0.2), scikit-learn-25931 (0.6→0.4),
+  django-12209 (**1.0→0.0**). django-12209 regressed to 3/5 `empty_diff` (model
+  talks, never edits) + 1 verify-fail. The 4 invalids are the model THRASHING
+  (pytest-10051 hit 160/132/219 turns; worker_reported_error). Both are the
+  **under-action** failure mode P3's trajectory-analyst already isolated
+  (under-action + hallucinated user pushback). SFT on the model's OWN successes
+  does not penalize under-action → the clone reinforced verbose non-editing
+  rather than fixing it. Behavioral cloning is the wrong tool for an
+  exploration/self-direction failure; that failure mode wants a reward signal
+  (RL), not more imitation of the same policy.
+- **Cycle status (pre-committed rules, PLAN §Decision rules).** One full
+  scaffold+LoRA alternation cycle is now complete: scaffold rung topped at +3
+  (P3 convergence), LoRA rung net −2 — **both below the +5 keep gate; no kept
+  variant** (v001-baseline remains the reference scaffold). The kill criterion
+  ("after one scaffold+LoRA cycle … ships as a negative result + write-up; no
+  extension without new outside evidence") is at its trigger. It is stated
+  relative to Haiku 4.5 (cost-per-solved-task, dev pass-rate gap), which is the
+  DEFERRED G6 measurement — so the disciplined next step is the Haiku baseline
+  to complete the kill-criterion evaluation, NOT more LoRA configs or an RL
+  escalation (that would be "extension without new outside evidence"). Operator
+  decision point.

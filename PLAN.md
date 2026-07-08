@@ -32,7 +32,7 @@ first-class deliverable in both outcomes.
 - **G6 Decision.** Routing recommendation with blended-cost math, kill
   criterion explicitly evaluated, write-up shipped.
 
-## Status (2026-07-07)
+## Status (2026-07-08)
 
 Live gate state is mechanical: `python3 infra/status.py`. Full log:
 findings/FINDINGS.md. Summary of where the project stands:
@@ -74,10 +74,28 @@ findings/FINDINGS.md. Summary of where the project stands:
   addressable. No variant cleared the keep bar, so there is nothing to confirm on
   the single holdout run; G4 stays open. Runs: `20260708T004754` (v002 clean),
   `20260708T015417` (v003), `20260708T030102` (v004). See findings/FINDINGS.md.
-- **G5–G6 — not started.** P4 (LoRA) is now the indicated rung: QLoRA on the
-  v002 verifier-passing trajectories to attack the capability wall the scaffold
-  can't move, worker prompt kept minimal per the complexity meta-finding.
-  Operator go/no-go on the P3→P4 transition pending.
+- **G5 LoRA — RAN, gate NOT met (LoRA not kept).** A rank-32 **bf16** LoRA
+  (not QLoRA — Unsloth advises against 4-bit for this Qwen3.5-MoE hybrid;
+  attention-only q/k/v/o_proj, router + GDN/Mamba mixer excluded) was trained on
+  the 89-example v002 think-preserving SFT set (adapter `lora-20260708T162249`,
+  train loss 0.258) and served on the FP8 base via vLLM `--lora-modules` (no
+  merge/requantize needed). Smoke re-gate clean (20/20, 0 leaks). **Dev paired
+  vs the same-scaffold base arm: +1/−3/=36, net −2** (LoRA run
+  `20260708T181500-v002-completion-contract` vs base `20260708T132147-…`) —
+  below the +5 keep gate, and this was the IN-DISTRIBUTION case (trained on
+  these dev tasks' own passing trajectories). Mechanism: the clone reinforced
+  the **under-action** failure mode (empty-diff regressions, multi-hundred-turn
+  thrashing) rather than fixing it — SFT on the policy's own successes can't
+  penalize under-action; that failure wants RL, not imitation. LoRA NOT kept;
+  holdout not unlocked.
+- **Cycle complete → kill criterion at trigger.** One full scaffold+LoRA
+  alternation cycle is done: scaffold +3 (P3), LoRA −2 (P4), both below +5, no
+  kept variant (v001-baseline is the reference). Per §Decision rules the next
+  step is the **deferred Haiku 4.5 baseline** (G6 cost-per-solved-task) to
+  complete the kill-criterion evaluation and write up the result — not further
+  LoRA configs or an RL escalation absent new outside evidence. **Operator
+  decision point.**
+- **G6 — not started.** Blocked on the operator decision above.
 
 ### Sequencing decision (2026-07-08, operator-directed)
 
@@ -167,10 +185,12 @@ and old. Blend:
   expect to write their own inner loop). Operator remains the selection step
   for at least the first two cycles; promote to autonomous only after the
   guardrails have caught a real mistake.
-- **P4 LoRA (conditional on format-class residue).** Unsloth QLoRA on
+- **P4 LoRA (conditional on format-class residue).** **bf16** LoRA (NOT
+  QLoRA — Unsloth advises against 4-bit for this Qwen3.5-MoE hybrid) on
   passing trajectories under the winning scaffold; `<think>` preserved in
-  targets; rank 32 / α 64; attention + shared layers only, router excluded.
-  Re-gate smoke + dev + holdout.
+  targets; rank 32 / α 64; attention only (q/k/v/o_proj), router + GDN/Mamba
+  mixer excluded. Re-gate smoke + dev + holdout. **RAN 2026-07-08 — net −2 on
+  dev, not kept; see §Status / FINDINGS.**
 - **P5 Alternate.** Reopen P3 briefly on new weights; 1–2 alternations is
   realistic convergence. Then G6.
 
