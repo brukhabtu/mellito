@@ -937,3 +937,34 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   3. reconsider the rung given the added recapture step.
 - no code built yet; export/data-prep tooling deferred until the reasoning fork
   is decided (it sets the SFT target format).
+
+## 2026-07-08 · P4 LoRA · incident (reasoning recapture — LiteLLM mapping insufficient)
+- Attempted the recapture (FINDINGS 2026-07-08 P4 data audit, option 1): added
+  `model_info: {supports_reasoning: true}` to the proxy's model entry so the
+  LiteLLM /v1/messages route would render Ornith's vLLM `reasoning_content` as
+  Anthropic `thinking` blocks, redeployed, re-ran v002 40×5
+  (`20260708T041303-v002-completion-contract`): 21/40 solved, **106 passing
+  trials, 0 invalid** — the sweep is clean and the worker loop is unaffected.
+- **BUT thinking is STILL not captured.** A passing transcript (django-11066
+  trial4) has 3 text / 6 tool_use / 6 tool_result blocks and **0 thinking
+  chars**. The `supports_reasoning` flag alone does not make LiteLLM 1.91 emit
+  thinking content blocks on the Anthropic passthrough for a custom `openai/`
+  upstream. tokens_out 1.80M is v002-vs-v001 scaffold variance, not evidence of
+  capture. Two `modal run ::run_one` validation attempts also died on
+  "(label stolen)" contention with the fresh deploy (run_sweep tolerates it,
+  run_one doesn't) — noted; not the blocker.
+- The reasoning IS generated (parser is on; it's stripped from content, not
+  absent) — the loss is purely in the vLLM→LiteLLM→Anthropic response
+  translation. Cracking it needs one of: (a) the correct LiteLLM config to map
+  reasoning_content→thinking on /v1/messages (likely a per-model or
+  litellm_settings key beyond supports_reasoning; needs a direct /v1/messages
+  probe against the proxy, which needs PROXY_MASTER_KEY); (b) log reasoning at
+  the proxy layer to a side-channel and re-associate per turn; or (c) disable
+  the reasoning parser so <think> stays inline and regex it out of transcript
+  text for training (risks think-leak into the live worker / tool calls).
+- No further paid sweeps until the capture path is proven on a single trial.
+- Decision pending (operator): keep debugging capture (mostly free — config +
+  redeploy + one ~$0.3 single-task verify), OR train the LoRA on the 106+
+  think-stripped trajectories we now have (PLAN-deviating, reasoning-mismatch
+  risk for a reasoning model), OR pause P4 and write up the P3 scaffold-ceiling
+  result as the deliverable.
