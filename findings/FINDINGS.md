@@ -682,3 +682,54 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   the worker act-don't-describe and not terminate before producing a diff.
 - next: propose-mutation → v002 (falsifiable, one axis), operator approval
   BEFORE any paid eval (keep/reject stays operator-in-the-loop per PLAN §P3).
+
+## 2026-07-08 · P3 Scaffold search · run (v002-completion-contract — first mutation)
+- variant: v002-completion-contract (parent v001-baseline) — hypothesis: the
+  self-termination plurality (harness-friction 54% of baseline non-pass trials)
+  is fixable by a worker-CLAUDE.md "completion contract" (act-don't-describe;
+  never end a turn without a diff + green VERIFY.txt; autonomous so never ask for
+  direction; no greeting resets). Falsifiable: >=+5 paired on dev, concentrated
+  in the harness-friction / flip-candidate tasks.
+- run: `20260707T235246-v002-completion-contract` · 40 dev · 5 trials (200)
+- result: solved 24/39 valid tasks = 61.5% (95% CI [45.9, 75.1]); trial-level
+  104 pass / 192 valid (54.2%) vs baseline 93/199 (46.7%), +7.5pts trial-level.
+  **paired vs v001: 6 wins / 1 loss / 32 ties, net_tasks +5** (comparable=39).
+  $/solved $0.068 (was $0.086). gpu 1482s / $1.63 attributed; ledger $2.99.
+- **adversarial read — the headline +5 is really +4 genuine.** 5 of 6 wins are
+  real and land exactly on the predicted set (flip-candidate tasks that were
+  harness-friction-heavy in the baseline taxonomy): astropy-12907 2/5→4/5,
+  django-11206 1/5→3/5, django-11239 2/5→4/5, django-13023 1/4→3/5, and the
+  cleanest confirmation **pytest-7571 1/5→4/5** (baseline 4/4 harness-friction).
+  The 6th "win", sklearn-13496 (2/5→2/4), is a denominator artifact: same 2
+  passes, but a flaked 5th trial shrank valid to 4 so 2/4=0.50 crosses the
+  majority line that 2/5=0.40 missed — not a real improvement. Discounting it:
+  genuine net **+4, one under the +5 MDD floor.** The one true loss is
+  astropy-13453 (3/5→1/5).
+- corroborating drift (not threshold crossings, but consistent with less
+  self-termination): astropy-7166 3→5, sklearn-10844 3→5 (was 2× hf),
+  sklearn-13328 4→5 (hf), django-10973 3→4, several 4→5. Downward flips were the
+  capability-classed tasks (django-11333 1→0, django-12039 1→0, astropy-14365
+  1→0 — all wrong-file/wrong-branch in the taxonomy), consistent with "prompt
+  scaffolding does not manufacture capability."
+- **SURPRISE (logged per experiment-integrity, not worked around): invalid
+  spike 1→8/200**, ALL `worker_sandbox_create_failed` (turns=0, tok_out=0 — the
+  Modal sandbox never created, after the 2× retry), ALL in scikit-learn images:
+  25931 wiped 5/5 (baseline was 4/5 solved → excluded from the pair, NOT a
+  regression — it simply didn't run), plus 13496/14141/25747 one each. This is
+  a Modal sandbox-creation flake localized to the sklearn image pull during this
+  sweep, unrelated to the variant prompt (worker never started). Correctly
+  excluded by Error≠fail. Effect on the comparison: it removed a
+  baseline-solved task (25931) from pairing (biasing net *up* by at most
+  suppressing a tie/loss) and manufactured the 13496 artifact win.
+- decision-rule states: MDD — reported +5 meets ≥5 on its face, but adversarial
+  net is +4 (< floor) once the denominator-artifact win is discounted → **does
+  NOT cleanly clear the pre-committed keep bar.** dev/holdout gap n/a (G4 only).
+  contamination tripwire n/a (dev is 100% public; no own-repo slice to diverge).
+  kill criterion n/a (Haiku not yet measured).
+- verdict: **inconclusive — promising but sits on the noise floor.** The
+  self-direction thesis is directionally confirmed (5 genuine wins, all on the
+  predicted harness-friction/flip-candidate set; pytest-7571 the clean case),
+  but the effect is +4 genuine, one under the MDD floor, and the read is muddied
+  by 8 infra-flaked trials. Recommend a clean re-run of v002 (the flake was
+  Modal-side, not the variant) to settle +4 vs +5 before a keep/reject commit —
+  ~$1.6 / 30 min. Not kept, not rejected, pending that.
