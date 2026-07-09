@@ -1363,3 +1363,40 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
 - Net: nothing changes the Phase-C read — for a first proof stay on Modal;
   the live question to resolve before building a trainer is managed-RFT
   (Fireworks) custom-arch support, not raw $/hr.
+
+## 2026-07-09 · P6-B · GATE RESULT — PASS (borderline on count, solid on mechanism)
+- Analyzer `infra/selection_analysis.py` (frozen pre-registered rule, run
+  22f00fa; 21+55 tests green; numbers reproduce via the CLI).
+- **v001 (`20260707T215242-v001-baseline`): selected_solve 26/40** vs
+  majority-solve 20, pass@5 ceiling 29, mean pass@1 0.467. Lift +6 over
+  majority (gate ≥+5 → **MET**, but 26 is inside the pre-registered 24–26
+  borderline band, +1 over floor).
+- **Recapture (`20260708T132147-v002-completion-contract`): selected_solve 29/40**
+  vs majority 28, pass@5 33 (gate >28 → **MET**, +1). Less lift because the
+  stronger scaffold already captured most headroom (pass@5−majority = 5 vs 9 on
+  v001) — selection helps MORE when the base policy is weaker (design note for A).
+- **Mechanism is NOT borderline — it replicates across 400 trials.**
+  P(oracle pass | worker RAN_PASS) = 0.716 (v001) / 0.732 (recapture);
+  P(oracle pass | NEVER_RAN) = 0.34 / 0.26. v001 confusion over 73 verify-running
+  trials: TP=48, FP=19, FN=2, TN=4 → precision 0.72. The self-verification
+  signal is real, usable, and consistent — this is the load-bearing evidence
+  (the selected_solve count is a coarse 40-task quantization of it).
+- **Detector audited (Fable direct spot-reads, 3 trials spanning all states):**
+  django-11206 t1 (RAN_PASS→oracle pass, task 1/5 — a genuine rescue: worker ran
+  `runtests … utils_tests.test_numberformat`, last run OK, oracle agrees);
+  astropy-14365 t3 (RAN_PASS→oracle FAIL — CONFIRMED legit: worker's verify
+  exited 0 on the BASE tests, oracle failed only on the hidden FAIL_TO_PASS —
+  the signal's honest imprecision, not a mis-fire); django-11239 t4 (NEVER_RAN,
+  confirmed no verify call). No over-firing; the 19 FPs are real base≠hidden
+  gaps, the expected ceiling of a legitimate oracle-blind signal.
+- **Verdict: PASS.** Both pre-registered thresholds met; the optional confirming
+  sweep is DECLINED as redundant — a fresh 40×5 would yield another coarse count
+  with its own sampling noise, whereas the mechanism (0.72 precision) is already
+  replicated across two independent runs, and Phase A's skill-admission engine
+  depends on that precision, not on the exact count. The pass@1→pass@5 headroom
+  is legitimately selection-recoverable → the new-outside-evidence gate for A is
+  open. Next: A0 skill-use manipulation check ($0.50) — operator go/no-go on the
+  P6-B→A transition.
+- Caveat carried forward (FINDINGS 2026-07-09 SWE-bench leakage): absolute
+  selected_solve inherits base-corpus test-noise; the signal-quality ratios are
+  the robust readout.
