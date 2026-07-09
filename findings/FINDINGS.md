@@ -1226,3 +1226,50 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
 1. **Restate the kill criterion in base-vs-tuned terms** (it is Haiku-relative and un-evaluable after the redirect). Without this there is no pre-committed gate for any further spend — RL or otherwise.
 2. **Approve the $10 best-of-k / self-verification precondition test** (prediction: ≥+5 over v001 20/40 toward the 72.5% pass@5 ceiling; kill: <+5 → write-up) — **or** decline it and **ship the negative-result write-up now** (the pre-committed default).
 3. **Only if (2) clears +5:** authorize the RL rung knowing it costs ~$80–150 (≈ the month's remaining budget) and carries unproven hybrid-arch / 35B-scale / sparse-reward-at-50% risks. Escalating RL *without* a passed precondition gate is an extension the pre-committed rules do not sanction.
+
+## 2026-07-09 · research · Ornith training recipe (deep-research wf_2bd268c9-bf7)
+- Multi-source verified research on DeepReinforce's Ornith-1.0 training recipe
+  (89 Sonnet agents; primary sources: deep-reinforce.com/ornith_1_0.html, HF
+  model card, GitHub repo; note: synthesis stage emitted a placeholder — the
+  findings below are extracted directly from the per-agent journal quotes, and
+  all vendor claims are self-reported/unreproduced).
+- **Co-evolution CONFIRMED, with the load-bearing detail:** "Each RL step
+  proceeds in two stages: conditioned on a task and the scaffold previously
+  used for it, the model first proposes a refined scaffold; conditioned on
+  that scaffold and the task description, it then generates a solution
+  rollout. Reward from the rollout is propagated to both stages." And the
+  SCOPE: "we fix the outer trust boundary: the environment, the tool surface,
+  and test isolation are immutable and outside the model's reach, so the model
+  evolves only the inner policy scaffold: its memory, error-handling, and
+  orchestration logic." I.e. Ornith's native mode = **immutable outer harness
+  + model-refined PERSISTENT inner scaffold artifact under reward**.
+- Implication for our failure history: our harness gives Ornith the immutable
+  outer boundary but NO persistent inner-scaffold channel (every trial starts
+  from a blank config). Under-action is plausibly what the policy looks like
+  with its co-evolved partner amputated. A skill-library rung (model-authored
+  skills/CLAUDE.md persisting across tasks, verifier-selected) is nearly
+  isomorphic to the documented training geometry — this is the "new outside
+  evidence" the kill criterion requires for an extension.
+- Recipe details now source-confirmed (previously in PLAN §Deferred notes
+  unattributed): token-level GRPO with asymmetric-epsilon clip; async
+  pipeline-RL with staleness weight w(d_t) (downweight then drop stale
+  tokens); three-layer anti-hacking (immutable boundary / deterministic
+  monitor -> zero reward + advantage exclusion / frozen LLM-judge veto for
+  intent-level gaming e.g. hardcoded expected outputs).
+- Deployment: vendor evaluated inside THIRD-PARTY harnesses incl. Claude Code
+  2.1.126 (Terminal-Bench 2.1), OpenHands (SWE-bench), mini SWE agent — so
+  external-harness deployment is intended, with qwen3_xml/qwen3 parsers (what
+  we serve). Fine-tuning guidance: a generic Unsloth stub only; no LoRA/RL-on-
+  top recipe, no Voyager-style skill-library precedent, and **no ablation
+  separating self-scaffolding gains from base-model quality** (standing
+  caution stands).
+- Corpus-relevant caveat surfaced: independent 2026-03 research reports
+  ~19.78% of "resolved" SWE-bench-Verified patches are semantically incorrect
+  under strengthened tests and >32% of instances show solution leakage — our
+  dev corpus imports SWE-bench Verified, so absolute pass rates carry this
+  noise (paired deltas remain valid; both arms share the bias).
+- Card-vs-weights discrepancy (logged, low stakes): the model card describes
+  the family as "post-trained on top of Gemma 4 and Qwen 3.5" and calls the
+  35B just "35B-MoE" (no A3B/Mamba/GDN mention); our hands-on serving of the
+  actual weights (custom arch via trust_remote_code, --gdn-prefill-backend)
+  is the stronger evidence for the hybrid-GDN architecture.
