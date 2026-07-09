@@ -1128,3 +1128,101 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   metric once scratch files enter diffs — use no-source-edit counts.
 - Scaffold axis CLOSED (strike 4, geometry falsified; no further exceptions).
   Fork: RL rung vs negative-result write-up — decision memo follows.
+
+## 2026-07-09 · P5 fork · decision memo (RL rung vs negative-result write-up)
+
+# FORK DECISION MEMO — mellito / Ornith→Claude Code adaptation
+
+Date: 2026-07-09 · Author: executor session · Destination: session log (verbatim)
+
+## 0. State of play (verified this session)
+
+- Reference: v001 baseline, run `20260707T215242-v001-baseline` — **20/40 = 50%** majority-solve, $0.086/solved, 1 invalid/200.
+- Objective (operator redirect, logged 2026-07-09): Haiku comparison **dropped**. Bar is now base-vs-tuned: tuned Ornith+CC must beat stock Ornith+CC by **≥+5 paired tasks on dev**. MDD floor unchanged.
+- Four intervention classes, one invariant failure mode (**under-action**: diagnoses, then narrates instead of editing source):
+  1. Prose contract (v002): **+3** clean (run `20260708T004754`; first run `20260707T235246` was +4 genuine after discounting a denominator-artifact win).
+  2. Mechanical forcing (v003 Stop hook): **+2** (run `20260708T015417`); 25/200 empty_diff persisted.
+  3. Imitation (bf16 LoRA r32 on own passing trajectories): **net −2** in-distribution (run `20260708T181500` vs base `20260708T132147`).
+  4. Geometry reframing (v005 script-first): manipulation-check **NO-GO** (run `20260709T014057-v005-script-first-partial`): script written+run 7/12 (bar 8/12), 9/12 scratch-only diffs vs v001's 9/20 no-source-edit — worse.
+- Positive residue: v005 django-12209 trial2 **PASSED** with a genuine script-driven source fix; v001 went 0/5 on that task. Capability present; selection pressure toward exercising it absent.
+- Spend: **$23.89 of $150/mo** (cost-ledger.csv sum), ~$126 remaining this month. Holdout still **0 specs** (operator move pending; only bites at final G4).
+- Kill criterion is stated Haiku-relative and is now **stale** under the redirect (see §2).
+
+## 1. The fork, stated plainly
+
+**(A) Escalate to the RL rung.** **(B) Ship the negative-result write-up.** No pre-committed third option exists — P3's stopping rule fired (3 consecutive non-keeps, v002/v003/v004), v005 was its one pre-registered exception and is now spent (strike 4). PLAN's default at this junction is (B); (A) is gated (§2).
+
+## 2. Evidence-based argument for each branch
+
+### Pre-committed rules that bind here (quoted, not paraphrased)
+
+> **Minimum detectable difference:** at this corpus size (~40 tasks × 5 trials) treat paired improvements <5 points as noise. No variant is kept below that; a "trend" is not a keep.
+
+> **Kill criterion:** if after one scaffold+LoRA alternation cycle, cost-per-solved-task doesn't beat Haiku 4.5 by ≥30% OR dev pass rate is >10 points behind Haiku, the project ships as a negative result + write-up. **No extension without new outside evidence.**
+
+The scaffold+LoRA cycle is **complete** (scaffold topped at +3, LoRA net −2, both < +5, no kept variant). The kill criterion is at its trigger. Two facts about it:
+
+1. Its measurable clauses reference Haiku, which the redirect **dropped** — so it is literally un-evaluable as written. It must be restated in base-vs-tuned terms before it can gate anything.
+2. Its "no extension without new outside evidence" clause is the pivot for the RL branch. The 4-class convergence is *inside* evidence (our own runs), not *outside* evidence. **Strictly by the pre-committed rule, RL is not yet authorized.**
+
+### Branch (B) — write-up — is the pre-committed default
+
+Everything points to it under the current rules: cycle complete, stopping rule fired, no kept variant, kill criterion at trigger, default action = "ships as a negative result + write-up." Nothing in PLAN pre-authorizes RL from inside evidence alone.
+
+### Branch (A) — RL — the evidence for it
+
+Not a pre-committed path, but the evidence for it is specific and strong on one axis: **the missing ingredient is selection pressure on failing rollouts, which is exactly what none of the four classes supply and exactly what RL supplies.**
+
+- The failure mode is invariant to prose (+3), forcing (+2), imitation (−2), geometry (NO-GO). Four independent levers, zero movement of the action core. That is the signature of a policy-optimization gap, not a scaffold or format gap.
+- **The capability is reachable — quantified, free, already in hand.** Baseline passes/5 distribution (run `20260707T215242`): 0×11 · 1×6 · 2×3 · 3×6 · 4×7 · 5×7. Majority-solve = 20/40 = 50%, but **pass@5 (≥1 pass in 5) = 29/40 = 72.5%** — a **+9-task headroom** the policy reaches under sampling but does not reliably land. That gap is the selection signal RL exists to close. No new spend produced this number.
+- LoRA's −2 is the corroborating negative: imitation of the policy's own successes gives no negative gradient on under-action, so it reinforced verbose non-editing (django-12209 1.0→0.0, run `20260708T181500`). RL's negative gradient on failing rollouts is the one thing not yet tried.
+
+## 3. RL branch — feasibility sketch (grounded in PLAN §Deferred: RL rung design notes)
+
+PLAN names the shape: **token-level GRPO**, DAPO-style asymmetric clip (ε⁻=0.2, ε⁺=0.28), async pipeline-RL staleness weight w(d_t) (K1≈1, K2≈4–8), three-layer anti-hacking (immutable boundary / deterministic monitor with zero-reward-and-group-exclusion / frozen LLM-judge veto), train in an open CC-shaped harness, evaluate in real CC. PLAN's estimate: **P1–P4 byproducts are ~80% of RL infra.**
+
+**Already built (the expensive parts):**
+- **Reward** = verifier pass/fail. `run_trial` emits per-trial verdict under the hidden-tests contract; the test-reset-before-verdict guard already defeats the verifier-gaming seen in the baseline taxonomy (×2). This is the costly piece and it exists.
+- **Rollout generation** = `run_sweep`/`run_trial` already produce verifier-scored trajectories at ~908 tok/s, $2.5–4.7 per 40×5 sweep.
+- Hermetic environments, trajectory logging, paired stats — all present.
+
+**Net-new (~20%):**
+- A **GRPO trainer** over the served 35B: group-relative advantages, DAPO clip, the KL/reference term.
+- A **serve↔train weight-sync loop** (the async pipeline with the staleness weight) — rollouts must come from the *current* updating policy, which the batch sweep infra does not do.
+
+**GPU cost (observed rates, cost-ledger.csv):** attributed rate is **~$3.95/H100-hr** (2116s→$2.32; 4244.7s→$4.66); LoRA training already forced 1×H100→**H200 141GB** on OOM (real H200 ~$4.5–5/hr). A minimal GRPO proof: G=8 rollouts over a ~20-task learnable slice = ~160 rollouts/step ≈ 0.8× a sweep ≈ $2–4/step generation, plus continuous trainer-GPU. **30–50 steps ≈ $80–150 all-in — i.e. essentially the entire remaining monthly budget (~$126).** One RL smoke consumes the month.
+
+**Biggest technical risks:**
+1. **Arch in an RL trainer.** No validated GRPO recipe for a Qwen3.5-MoE / GDN-Mamba hybrid. LoRA already needed a custom chat template, router+mixer exclusion from the adapter, and an H200 bump — full/LoRA-RL adds on-policy generation KV + optimizer state on top. Unproven, likely multi-H200.
+2. **35B scale.** Policy + reference + generation resident simultaneously; memory is the binding constraint, as it already was for a rank-32 LoRA.
+3. **Sparse reward at ~50% solve.** ~11/40 tasks at 0/5 and ~7/40 at 5/5 are **zero-variance groups → no gradient** (PLAN anticipates this: "if exclusion collapses groups, switch to shaped penalties"). The learnable middle is only ~22 tasks — the effective RL corpus is roughly half of dev.
+
+**Cheaper intermediate rungs (ordered cheapest-first):**
+- **Best-of-k at inference — genuinely unexplored, near-free, and it is the precondition test for RL.** The baseline already holds 5 samples/task; the question is whether a *legitimate* selector (worker's own repro/self-verification; not the hidden oracle) recovers a chunk of the +9 pass@5 headroom. Much of this is analyzable on **existing** transcripts (does the trial whose self-written repro passes correlate with the trial the hidden test passes?) before any new sweep. Zero-to-tiny spend.
+- **RAFT / rejection-sampling SFT — mostly already spent.** Honest caveat: the P4 LoRA *was* rejection sampling — it trained only on verifier-passing (=selected) trajectories and still went −2. Plain RAFT is largely a re-run. The one thing RAFT adds over P4 is *ranking among passes* (keep the cleanest genuine-source-edit trajectory, balance per task); the thing it still cannot add — and the thing under-action needs — is the **negative gradient on failing rollouts**, which only RL supplies. Do not sell RAFT as new; the LoRA already tested imitation-with-selection.
+
+## 4. Write-up branch — what it establishes
+
+**Established (a real finding):** Under stock Claude Code, Ornith-35B's dev ceiling is **model-bound at ~50% majority-solve**, and the dominant residual — under-action — is **invariant across four independent intervention classes** (prose +3 / mechanical +2 / imitation −2 / geometry NO-GO). Scaffold complexity is *inversely* correlated with performance (v002 +3 > v003 +2 > v004 0). This is a clean, publishable negative: prompt/format/imitation interventions do not convert a self-direction/exploration deficit; the capability is present (pass@5 72.5%; django-12209 script-driven pass) but unexpressed. The recipe and harness are the first-class deliverable in either outcome (PLAN north-star).
+
+**Left unanswered:** whether a reward signal (RL) closes the pass@1→pass@5 gap; the absolute Haiku/Sonnet comparison (dropped by redirect); a strict post-cutoff holdout (never sourced — SWE-rebench stale at 2025-04, holdout still 0 specs).
+
+**Cost of stopping now vs after RL:** now ≈ $0 additional (write-up is authoring). After RL ≈ +$80–150 (one month's remaining budget) for a proof-of-learning that is *not* pre-authorized under the kill criterion and carries three unproven-at-this-arch/scale risks.
+
+## 5. Recommendation (with explicit conditions)
+
+**Do not open a GRPO trainer yet.** It is not pre-committed (fails the "new outside evidence" clause), it eats the month's budget, and it stacks three unvalidated risks — before we have even confirmed the selection gap is *legitimately* recoverable rather than oracle-only.
+
+**Recommended cheapest falsifiable first experiment — the best-of-k / self-verification precondition test:**
+- **Falsifiable prediction (pin BEFORE spend):** a legitimate self-verification selector (keep the sampled trajectory whose worker-authored repro passes) recovers **≥+5 dev majority-solve tasks over v001's 20/40**, toward the 29/40 pass@5 ceiling (run `20260707T215242`).
+- **Method:** first, near-free re-analysis of existing baseline+v002 transcripts for self-repro↔hidden-test correlation; only if promising, one confirming sweep.
+- **Cost ceiling:** **$10** (analysis + ≤2 sweeps at ~$2.5–4.7 each).
+- **Pre-committed kill condition:** if the correlation is absent OR the confirming lift is **<+5** tasks, selection at inference is not the lever → under-action is not selection-recoverable at inference → **ship the write-up; do NOT escalate to RL.** If it clears +5, that is the *new outside evidence* the kill criterion requires, and RL/RAFT-with-negative-gradient becomes justified — at which point the operator must have restated the kill criterion in base-vs-tuned terms first.
+
+This mirrors house style: falsifiable prediction + rejection condition + cost ceiling committed before spend, cheapest rung first, no escalation absent a passed gate.
+
+## OPERATOR DECISION POINT
+
+1. **Restate the kill criterion in base-vs-tuned terms** (it is Haiku-relative and un-evaluable after the redirect). Without this there is no pre-committed gate for any further spend — RL or otherwise.
+2. **Approve the $10 best-of-k / self-verification precondition test** (prediction: ≥+5 over v001 20/40 toward the 72.5% pass@5 ceiling; kill: <+5 → write-up) — **or** decline it and **ship the negative-result write-up now** (the pre-committed default).
+3. **Only if (2) clears +5:** authorize the RL rung knowing it costs ~$80–150 (≈ the month's remaining budget) and carries unproven hybrid-arch / 35B-scale / sparse-reward-at-50% risks. Escalating RL *without* a passed precondition gate is an extension the pre-committed rules do not sanction.
