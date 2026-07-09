@@ -115,9 +115,8 @@ def by_provenance(per_task_stats: dict) -> dict:
 def cost(results: list, usd_per_gpu_hour: float) -> dict:
     gpu_s = sum(r.get("gpu_seconds", 0.0) for r in results)
     usd = gpu_s / 3600.0 * usd_per_gpu_hour
-    # API dollars (claude-* workers). GPU spend and API spend are disjoint by
-    # construction — a trial attributes to one path or the other — so total cost
-    # per solved task folds both.
+    # api_usd is a legacy field (hosted workers removed 2026-07-09); always 0
+    # on new runs, kept in the fold so historical rows still sum correctly.
     api_usd = sum(r.get("api_usd", 0.0) for r in results)
     solved_tasks = sum(1 for s in per_task(results).values() if _solved(s))
     tin = sum(r.get("tokens_in", 0) for r in results)

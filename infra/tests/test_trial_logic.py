@@ -166,12 +166,12 @@ def test_worker_env_ornith_sets_base_url_and_key():
 def test_worker_env_missing_key_falls_back_to_sentinel():
     # No api_key (ornith path before run_trial fills it) or api_key=None -> the
     # 'missing-key' sentinel, NOT any hardcoded proxy key.
-    w = {"model": "claude-sonnet-4-5", "small_model": "claude-haiku-4-5-20251001",
+    w = {"model": "other-model", "small_model": "other-small-model",
          "base_url": None}
     env = tl.worker_env(w)
     assert "ANTHROPIC_BASE_URL" not in env
     assert env["ANTHROPIC_API_KEY"] == "missing-key"
-    assert env["ANTHROPIC_SMALL_FAST_MODEL"] == "claude-haiku-4-5-20251001"
+    assert env["ANTHROPIC_SMALL_FAST_MODEL"] == "other-small-model"
     env2 = tl.worker_env({"model": "ornith-35b", "base_url": "https://p/",
                           "api_key": None})
     assert env2["ANTHROPIC_API_KEY"] == "missing-key"

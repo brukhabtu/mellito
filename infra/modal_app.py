@@ -524,9 +524,9 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
     transcript_path = out_dir / "transcript.jsonl"
     app_handle = modal.App.lookup("ornith-harness")
 
-    # Attribution switch (F7): the ornith path is GPU-attributed (shared vLLM
-    # fleet, billed by wall time); the claude-* path is API-dollar-attributed.
-    # Branch on this explicit flag, never on base_url.
+    # Attribution flag (F7): all workers are GPU-attributed (shared vLLM fleet,
+    # billed by wall time) since the hosted-worker path was removed 2026-07-09.
+    # The explicit flag is kept so attribution never infers from base_url.
     gpu_attributed = bool(worker.get("gpu_attributed"))
 
     def _result(verdict, reason, usage=None, timed_out=False, error=None):
@@ -538,9 +538,10 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             "wall_clock_s": round(time.time() - started, 2),
             "tokens_in": usage.get("tokens_in", 0),
             "tokens_out": tokens_out,
-            # GPU-seconds only on the ornith path; api_usd only on claude-*.
-            # Claude Code self-reports total_cost_usd from its own pricing table
-            # even against the proxy, so recording it for ornith is phantom $.
+            # api_usd is a legacy field kept for ledger/stats schema stability;
+            # always 0.0 now (no hosted workers). Claude Code self-reports
+            # total_cost_usd from its own pricing table even against the proxy,
+            # so recording it for the ornith endpoint would be phantom $.
             "gpu_seconds": (tokens_out / tl.AGG_TOK_PER_S) if gpu_attributed else 0.0,
             "api_usd": 0.0 if gpu_attributed else usage.get("api_usd", 0.0),
             "transcript_path": str(transcript_path.relative_to("/runs")),
@@ -559,20 +560,12 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             raise RuntimeError(
                 f"variant config contains {m.name!r} — refusing (oracle leak guard)")
 
-    # The ornith path authenticates to the in-app proxy with PROXY_MASTER_KEY
-    # (from run_trial's own secret env); fill it into the worker before building
-    # the exec env. The claude-* path instead needs a real Anthropic key, which
-    # lives in its own Modal secret injected into the sandbox container env (not
-    # the orchestrator); the exec env drops its placeholder ANTHROPIC_API_KEY so
-    # the container's real key wins.
-    if gpu_attributed:
-        worker = {**worker, "api_key": os.environ["PROXY_MASTER_KEY"]}
-    worker_secrets = None
+    # The worker authenticates to the in-app proxy with PROXY_MASTER_KEY (from
+    # run_trial's own secret env); fill it into the worker before building the
+    # exec env. (Hosted workers and their separate Anthropic-key secret were
+    # removed 2026-07-09 — every worker is proxy-routed now.)
+    worker = {**worker, "api_key": os.environ["PROXY_MASTER_KEY"]}
     exec_env = tl.worker_env(worker)
-    if not gpu_attributed:
-        worker_secrets = [modal.Secret.from_name(
-            "anthropic-api-key", required_keys=["ANTHROPIC_API_KEY"])]
-        exec_env.pop("ANTHROPIC_API_KEY", None)
 
     worker_img = modal.Image.from_registry(task_spec["image"]).run_commands(
         *tl.node_claude_install_cmds())
@@ -590,7 +583,7 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             try:
                 sb = _create_sandbox(app_handle, image=worker_img,
                                      timeout=timeout_s + 600, workdir="/testbed",
-                                     cpu=2, secrets=worker_secrets)
+                                     cpu=2)
             except Exception as e:
                 # _create_sandbox already exhausted its internal retry budget.
                 return _result(
@@ -816,7 +809,7 @@ def _parent_per_task(parent: str | None, root: Path) -> dict | None:
     """Latest usable parent-variant run summary -> its per_task block, for paired
     stats. Selection is by SUMMARY FIELDS, not run_id string luck: iterate
     candidates newest-first and skip any that were partial runs or used a
-    non-ornith worker (a claude-* or partial baseline is not a valid parent to
+    non-base worker (a LoRA-arm or partial baseline is not a valid parent to
     pair the subject against). The run_id suffixes stay for humans."""
     if not parent:
         return None
@@ -840,29 +833,22 @@ def _slug(s: str) -> str:
 
 
 def _make_worker(worker_model: str) -> dict:
-    """worker dict consumed by run_trial. ornith-35b routes through the in-app
-    LiteLLM proxy (GPU-attributed; its api_key is filled in run_trial from the
-    proxy's own secret env); claude-* talks to the real Anthropic API (base_url
-    None -> api.anthropic.com; key from the Modal secret, API-dollar-attributed).
+    """worker dict consumed by run_trial. Both served models (the base and the
+    P4 LoRA) route through the in-app vLLM+LiteLLM proxy stack, GPU-attributed;
+    the api_key is filled in run_trial from the proxy's own secret env. Same
+    routing; only the served-model name differs.
 
-    The claude-* path spends real Anthropic dollars the budget hook does NOT
-    gate, so the spend ack is enforced HERE — the single choke point both
-    entrypoints (run_sweep, run_one) route through."""
-    # Both the base and the P4 LoRA are served on the in-app vLLM+proxy stack
-    # (GPU-attributed). Same routing; only the served-model name differs.
+    Hosted reference workers were removed by the 2026-07-09 operator redirect
+    (all comparisons are internal, base-vs-tuned) — reject anything else so a
+    stale flag can't silently reach an external API."""
     if worker_model in ("ornith-35b", "ornith-lora"):
         return {"model": worker_model, "small_model": worker_model,
                 "base_url": _proxy_url(), "api_key": None,
                 "gpu_attributed": True}
-    print("WARNING: worker_model is a hosted Claude model. This spends real "
-          "Anthropic API dollars the budget hook does NOT gate, and requires "
-          "the 'anthropic-api-key' Modal secret to hold a real key "
-          "(modal secret create anthropic-api-key ANTHROPIC_API_KEY=sk-...).")
-    if os.environ.get("RUN_SWEEP_API_OK") != "1":
-        raise SystemExit("refusing claude-* worker without RUN_SWEEP_API_OK=1")
-    return {"model": worker_model,
-            "small_model": "claude-haiku-4-5-20251001", "base_url": None,
-            "gpu_attributed": False}
+    raise SystemExit(
+        f"unknown worker_model {worker_model!r}: hosted reference workers were "
+        "removed (operator redirect 2026-07-09); use 'ornith-35b' or "
+        "'ornith-lora'")
 
 
 def _probe_proxy(url: str) -> None:
@@ -883,9 +869,9 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
     flow upstream — this entrypoint refuses split='holdout' unless the flag
     file exists, as defense in depth.
 
-    worker_model selects the coding model: 'ornith-35b' (the subject; served
-    via the in-app vLLM+proxy stack, GPU-budget-gated) or a hosted 'claude-*'
-    reference model (real Anthropic API spend, NOT budget-hook-gated).
+    worker_model selects the served model: 'ornith-35b' (the base) or
+    'ornith-lora' (the P4 adapter); both run on the in-app vLLM+proxy stack,
+    GPU-budget-gated. Hosted reference workers were removed 2026-07-09.
     tasks: optional comma-separated task-id filter (partial run)."""
     import sys
     import time as _time
@@ -928,7 +914,7 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
         raise SystemExit(f"tasks missing hidden_tests_content: {missing}")
 
     cfg_tar = _tar_config(variant_dir)
-    worker = _make_worker(worker_model)  # enforces the claude-* API-spend gate
+    worker = _make_worker(worker_model)  # rejects unknown worker models
 
     ts = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
     run_id = f"{ts}-{variant}" if is_ornith else f"{ts}-{variant}-{_slug(worker_model)}"

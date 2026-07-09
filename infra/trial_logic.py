@@ -73,8 +73,9 @@ def parse_stream_json(lines: list[str]) -> dict:
         "num_turns": int(result.get("num_turns") or 0),
         "is_error": bool(result.get("is_error", False)),
         "subtype": str(result.get("subtype") or ""),
-        # total_cost_usd is real for hosted Claude models, 0 for the custom
-        # ornith endpoint (no pricing) — which is correct: ornith has no API $.
+        # total_cost_usd is Claude Code's self-reported pricing-table number;
+        # meaningless against the ornith endpoint (no API $) and zeroed
+        # upstream by run_trial's attribution switch.
         "api_usd": float(result.get("total_cost_usd") or 0.0),
         "found_result": True,
     }
@@ -168,9 +169,9 @@ def worker_env(worker: dict, extra: dict | None = None) -> dict:
     worker = {"model": str, "small_model": str, "base_url": str|None,
               "api_key": str (optional)}
 
-    ANTHROPIC_BASE_URL is set only when base_url is truthy — the ornith path
-    points Claude Code at the in-app LiteLLM proxy; the claude-* path omits it so
-    the CLI talks to api.anthropic.com. The DISABLE_* / nonessential-traffic vars
+    ANTHROPIC_BASE_URL is set only when base_url is truthy — the harness always
+    points Claude Code at the in-app LiteLLM proxy; a falsy base_url simply
+    omits the var. The DISABLE_* / nonessential-traffic vars
     keep the worker hermetic (no autoupdate, telemetry, or error reporting that
     would add nondeterminism or egress). `extra` overrides base keys last.
     """

@@ -8,10 +8,13 @@ either way.
 ## North-star goal
 
 By ~2026-09-15: route a defined class of coding tasks to self-hosted
-Ornith-35B inside Claude Code at **≥30% lower cost-per-solved-task than
-Haiku 4.5**, at a pass rate **within 5 points** of it on holdout — or a
-documented negative result explaining why. The published recipe is a
-first-class deliverable in both outcomes.
+Ornith-35B inside Claude Code where the improved system (scaffold and/or
+weights) **beats stock Ornith + Claude Code by ≥+5 paired tasks on dev,
+confirmed on holdout** — or a documented negative result explaining why.
+Cost-per-solved-task on our own GPU stays a tracked observability metric, not
+a comparison bar (hosted reference baselines removed by operator redirect,
+2026-07-09). The published recipe is a first-class deliverable in both
+outcomes.
 
 ## Goals & gates
 
@@ -22,15 +25,15 @@ first-class deliverable in both outcomes.
   determinism check, provenance recorded. Gate: corpus manifest complete;
   holdout contains only own-repo/post-cutoff.
 - **G3 Measurement.** Every trial emits verdict/tokens/gpu-seconds/wall-clock
-  under a run ID; baseline table for Ornith / Haiku 4.5 / Sonnet 5 on the
-  same corpus with paired stats. Gate: FINDINGS.md baseline entry exists.
+  under a run ID; baseline table for Ornith on the corpus with paired stats.
+  Gate: FINDINGS.md baseline entry exists.
 - **G4 Optimized scaffold.** A variant beating v001 by ≥5 points paired on
   dev, dev/holdout gap ≤5 points, lineage in git. Gate: the single unlocked
   holdout run confirms.
 - **G5 (conditional) LoRA.** Adapter converts surviving format-class
   failures without regressing smoke suite or holdout.
-- **G6 Decision.** Routing recommendation with blended-cost math, kill
-  criterion explicitly evaluated, write-up shipped.
+- **G6 Decision.** Base-vs-tuned verdict with $/solved-task observability
+  math, kill criterion explicitly evaluated, write-up shipped.
 
 ## Status (2026-07-08)
 
@@ -88,27 +91,34 @@ findings/FINDINGS.md. Summary of where the project stands:
   thrashing) rather than fixing it — SFT on the policy's own successes can't
   penalize under-action; that failure wants RL, not imitation. LoRA NOT kept;
   holdout not unlocked.
-- **Cycle complete → kill criterion at trigger.** One full scaffold+LoRA
-  alternation cycle is done: scaffold +3 (P3), LoRA −2 (P4), both below +5, no
-  kept variant (v001-baseline is the reference). Per §Decision rules the next
-  step is the **deferred Haiku 4.5 baseline** (G6 cost-per-solved-task) to
-  complete the kill-criterion evaluation and write up the result — not further
-  LoRA configs or an RL escalation absent new outside evidence. **Operator
-  decision point.**
+- **Cycle complete → kill criterion at trigger; scaffold axis CLOSED.** One
+  full scaffold+LoRA alternation cycle is done: scaffold +3 (P3), LoRA −2
+  (P4), both below +5, no kept variant (v001-baseline is the reference). The
+  one pre-registered exception to the stopping rule — **P5 v005-script-first**
+  (interaction-geometry hypothesis) — failed its manipulation check NO-GO on
+  all three pre-committed criteria (run
+  `20260709T014057-v005-script-first-partial`, $0.20): scripts adopted as
+  ritual, 9/12 scratch-only diffs vs v001's 9/20 no-source-edit on the same
+  tasks. Four intervention classes (prose/forcing/imitation/geometry), one
+  invariant failure mode (under-action). Per the 2026-07-09 fork memo
+  (FINDINGS) the sanctioned next step is the **$10 best-of-k /
+  self-verification precondition test** (evidence: pass@5 = 29/40 = 72.5% vs
+  majority-solve 20/40 on run `20260707T215242-v001-baseline` — +9 tasks of
+  selection headroom); kill <+5 → negative-result write-up, pass ≥+5 → new
+  outside evidence for the RL rung. **Operator decision point.**
 - **G6 — not started.** Blocked on the operator decision above.
 
-### Sequencing decision (2026-07-08, operator-directed)
+### Sequencing decision (2026-07-09, operator-directed; supersedes 2026-07-08)
 
-The G3 baseline is **Ornith-only for now; the Haiku 4.5 / Sonnet 5 columns are
-deferred** to just before G6. Rationale: the highest-signal, zero-API-cost next
-step is the **base-vs-improved-Ornith delta loop** (P3 scaffold search, G4) —
-paired variants on the same self-hosted endpoint, which is what the harness is
-built for and needs no external key. The hosted-Claude baselines answer a
-different question — *did we clear the bar that justifies self-hosting?* — and
-are only needed once there's an optimized Ornith worth holding against it. The
-**north-star and the kill criterion remain stated vs Haiku 4.5 (unchanged)**;
-only *when* Haiku is measured moves. The v001 Ornith baseline is the shared
-reference for both the internal deltas and the eventual Haiku comparison.
+Hosted-Claude reference baselines are **removed, not deferred**. The project's
+question is now entirely internal: *does our improvement beat stock Ornith
+inside Claude Code on the paired dev/holdout gate?* The external-bar question
+(*did we clear the bar that justifies self-hosting vs a hosted model?*) is out
+of scope for this project; the hosted-worker code path has been deleted from
+the harness so it cannot be run by accident. The v001 Ornith baseline (run
+`20260707T215242-v001-baseline`) is the single reference all deltas pair
+against. (The earlier 2026-07-08 decision had merely deferred the hosted
+columns to pre-G6; this replaces it.)
 
 ## Decision rules (pre-committed — surface, don't re-litigate)
 
@@ -117,10 +127,13 @@ reference for both the internal deltas and the eventual Haiku comparison.
   below that; a "trend" is not a keep.
 - **Stopping rule (Phase 3):** stop the search after 3 consecutive
   non-keeping mutations, then run the holdout gate.
-- **Kill criterion:** if after one scaffold+LoRA alternation cycle,
-  cost-per-solved-task doesn't beat Haiku 4.5 by ≥30% OR dev pass rate is
-  >10 points behind Haiku, the project ships as a negative result +
-  write-up. No extension without new outside evidence.
+- **Kill criterion (restated 2026-07-09, base-vs-tuned):** if after one
+  scaffold+LoRA alternation cycle the improved system does not beat stock
+  Ornith + Claude Code by ≥+5 paired tasks on dev (confirmed on holdout once
+  staged), the project ships as a negative result + write-up. No extension
+  without new outside evidence. *Status: AT TRIGGER — the cycle is complete
+  with no kept variant; the $10 best-of-k precondition test (fork memo,
+  FINDINGS 2026-07-09) is the sanctioned evidence probe.*
 - **Contamination tripwire:** improvement on public-pretrained tasks that
   isn't mirrored on own-repo tasks is treated as contamination, not
   progress.
@@ -175,9 +188,9 @@ and old. Blend:
   strategy above. Gate G2.
 - **P2 Baselines.** Ornith v001 on dev is the reference all deltas pair
   against; full trajectory logging from run one (it is future training data).
-  Gate G3 closes on the Ornith baseline entry. **Haiku 4.5 / Sonnet 5 baselines
-  are deferred to pre-G6** (see §Status sequencing decision) — the external bar
-  is only needed to judge a finished Ornith, not to run the search.
+  Gate G3 closes on the Ornith baseline entry. Hosted reference baselines
+  were removed by the 2026-07-09 redirect (see §Status sequencing decision) —
+  all comparisons are internal, base-vs-tuned.
 - **P3 Scaffold search (2–3 weeks; most expected gains) — the immediate next
   priority.** Loop:
   run-eval → classify-failures → propose-mutation → operator keeps/rejects.
