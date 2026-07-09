@@ -1346,3 +1346,20 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   meaningfully. Highest-leverage unknown to resolve BEFORE committing to build a
   GRPO trainer: whether any managed-RFT vendor (Fireworks) can ingest this custom
   arch — if yes, it removes the single biggest Phase-C engineering risk.
+
+## 2026-07-09 · research · GPU providers — verification caveats (addendum)
+- Adversarial cross-check (independent aggregators/press, not vendor pages)
+  qualifies the prior entry: (1) **on-demand single-GPU H200 is the
+  weakest-verified claim** for the cheap marketplace tier — Voltage Park gates
+  H200 behind 12+-month contracts, SF Compute may have no live on-demand H200
+  market, Hyperbolic's H200 rate is aggregator-only. The trustworthy H200
+  figures remain the ones pulled from provider PRICING PAGES: Massed Compute
+  $3.62, DataCrunch $4.00, Crusoe $4.29, Nebius $4.50. (2) Marketplace H100 is
+  cheap and real: Voltage Park $1.99, SF Compute ~$0.80-1.75 (auction),
+  Hyperbolic ~$1.49 — but decentralized/marketplace reliability is a flagged
+  risk for a multi-hour RL run (prefer an on-demand hardware owner + hard
+  checkpointing over a spot marketplace). (3) Corporate: Voltage Park merged
+  into **Lightning AI** (Jan 2026, 4 outlets) — brand/pricing still live.
+- Net: nothing changes the Phase-C read — for a first proof stay on Modal;
+  the live question to resolve before building a trainer is managed-RFT
+  (Fireworks) custom-arch support, not raw $/hr.
