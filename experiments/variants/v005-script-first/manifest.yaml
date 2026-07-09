@@ -29,4 +29,17 @@ hypothesis: >-
   convert into wrong-edit verify_exit_nonzero trials rather than passes (the
   v003 conversion pattern).
 date: 2026-07-09
-status: proposed
+status: rejected
+# rejected: FAILED the pre-registered manipulation check (run
+# 20260709T014057-v005-script-first-partial, 12/12 valid, $0.20) -- NO-GO
+# before any full-sweep spend. The prompt DID shift surface behavior (repro
+# scripts written in most trials; script written+executed 7/12, bar was 8/12)
+# but did NOT move the action core: 9/12 trials ended with SCRATCH-ONLY diffs
+# (repro.py etc., zero source edits) vs v001's 9/20 no-source-edit rate on the
+# same 4 tasks -- worse, not better. Rejection condition 3 met literally:
+# stalls converted to scratch-only verify_exit_nonzero (the v003 conversion
+# pattern; the scratch file also defeats the empty_diff detector). New
+# pathology: scratch scripts leak into diffs; 2 named test_*.py despite the
+# explicit instruction. Under-action is invariant to geometry reframing, as it
+# was to prose (v002), forcing (v003), and imitation (LoRA net -2). Scaffold
+# axis closed for good; the residue wants a reward signal, not a prompt.

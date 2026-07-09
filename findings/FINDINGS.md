@@ -1088,3 +1088,43 @@ Decision-rule states (from PLAN.md) to evaluate at each cycle end:
   to complete the kill-criterion evaluation, NOT more LoRA configs or an RL
   escalation (that would be "extension without new outside evidence"). Operator
   decision point.
+
+## 2026-07-09 · P5 v005-script-first · GATE (manipulation check FAILED — NO-GO, $0.20)
+- Operator redirect logged: the Haiku comparison is DROPPED; the project
+  objective is now purely the base-vs-improved delta (our Ornith + Claude Code
+  vs stock Ornith + Claude Code). Kill-criterion terms need restating by the
+  operator in base-vs-tuned form (they were Haiku-relative).
+- v005-script-first (one pre-registered exception to the fired P3 stopping
+  rule; hypothesis: Ornith's under-action is an interaction-geometry mismatch —
+  it was RL-trained driving its own script pipeline — so a script-first work
+  mode should convert stalls to edits). Two-stage gate; stage 1 (manipulation
+  check) ran as run `20260709T014057-v005-script-first-partial` (4 anchor
+  tasks × 3 trials, 12/12 valid, $0.1995).
+- **NO-GO on all three pre-committed criteria**: (1) script written AND
+  executed 7/12 (bar ≥8/12, borderline); (2) no-source-edit trials **9/12
+  (75%) vs v001's 9/20 (45%) on the same tasks — WORSE** (decisive); (3) new
+  pathology — scratch scripts leak into worker.diff (making `empty_diff`
+  undercount stalls: v005 shows 1/12 empty_diff but 9/12 scratch-only diffs)
+  and 2 scratch files named `test_*.py` despite the explicit instruction.
+  Manifest rejection condition 3 met literally: stalls converted to
+  scratch-only `verify_exit_nonzero` — the v003 conversion pattern again.
+- **Mechanism (spot-read, e.g. django-12209 t0, sklearn-25931 t1):** the model
+  adopts the script RITUAL (writes repro.py; sometimes runs it) then ends the
+  turn with a prose explanation of the fix — under-action survives geometry
+  reframing exactly as it survived prose (v002 +3), mechanical forcing (v003
+  +2), and imitation (LoRA net −2). Four independent intervention classes, one
+  invariant failure mode. Positive residue: django-12209 t2 PASSED with a real
+  script-driven source fix (v001: 0/5 on this task) — the capability exists;
+  what's missing is selection pressure toward using it (RL-shaped evidence).
+- Surprises logged (per working agreement): (a) the trajectory-analyst
+  subagent could not see this session's scratchpad files and wrongly concluded
+  the v005 transcripts were never exported (they are on the ornith-runs
+  volume; re-verified by direct download + mechanical analysis) — subagent
+  filesystem visibility is now a known analysis hazard; (b) v001 django-12209
+  terminal stalls include the worker SELF-IDENTIFYING AS "CLAUDE" in 2/5
+  trials (v001 run 20260707T215242, trial1 L29, trial4 L37) — identity
+  bleed-through under context loss, previously logged only as generic
+  greeting-resets; (c) `empty_diff` is no longer a valid cross-variant stall
+  metric once scratch files enter diffs — use no-source-edit counts.
+- Scaffold axis CLOSED (strike 4, geometry falsified; no further exceptions).
+  Fork: RL rung vs negative-result write-up — decision memo follows.
