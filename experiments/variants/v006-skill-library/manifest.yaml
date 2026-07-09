@@ -1,0 +1,26 @@
+id: v006-skill-library
+parent: v001-baseline
+hypothesis: >-
+  P6 Phase A. Research (deep-research wf_2bd268c9-bf7, FINDINGS 2026-07-09)
+  established that Ornith-35B was RL-trained refining a PERSISTENT inner
+  scaffold (memory/error-handling/orchestration) under reward inside an
+  immutable outer boundary — a channel this harness never gave it. Phase B
+  (run 20260707T215242, FINDINGS 2026-07-09) established real recoverable
+  headroom (pass@5 29/40 vs majority 20/40) and a usable self-verification
+  signal (0.72 precision). This variant adds the missing channel: three
+  concrete, INVOCABLE skills distilled from Ornith's own verifier-passing,
+  test-clean trajectories (reproduce-before-editing, run-the-verify-contract,
+  localize-by-symbol) as .claude/skills/*/SKILL.md, plus a one-line CLAUDE.md
+  pointer (v001 prompt otherwise verbatim). Skills are PROCEDURES the model
+  executes (not the v005 prose it ritualized, not the v002 autonomy axis) and
+  none is seeded by a test-editing trajectory (B2 guard).
+  Two-stage falsifiable prediction. STAGE A0 (this manipulation check, 4 anchor
+  tasks x 3 trials): the worker EXPLICITLY INVOKES a skill (SlashCommand /
+  skill call) in >= half of valid trials AND exhibits no new pathology; if it
+  ignores the skills (as v005 ignored the script-first prose), Phase A is
+  rejected here at ~$0.50. STAGE A2 (only if A0 passes and after a grow loop
+  freezes a library): the frozen library beats v001 by the pre-committed paired
+  gate on held-out tasks. Rejected if A0 shows non-invocation, or the library
+  merely re-rituals without landing more fixes.
+date: 2026-07-09
+status: proposed
