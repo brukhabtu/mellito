@@ -1318,3 +1318,31 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
 - Analyzer: `infra/selection_analysis.py` (to build next), reusing
   `export_trajectories.py` transcript parsing; unit-tested; every number
   reproducible from `python3 infra/selection_analysis.py <run_id>`.
+
+## 2026-07-09 · research · per-hour GPU training providers (Phase-C prep)
+- Sonnet research on flat per-hour GPU rental (vs Modal's per-second serverless)
+  for a future RL/LoRA run on this 35B model (needs 1x H200 141GB; LoRA already
+  OOM'd 1x H100 80GB). Primary-source-cited where possible; aggregator/secondary
+  figures flagged unverified. Snapshot 2026-07-09 — re-check live before spend.
+- **On-demand H200 (single-GPU rentable), cheapest verified first:**
+  Massed Compute $3.62/hr · DataCrunch(Verda) $4.00/hr · Crusoe $4.29/hr ·
+  Nebius $4.50/hr · Modal(baseline) $4.54/hr serverless. On-demand H100:
+  TensorDock $2.25 · Massed Compute $2.73 · DataCrunch $3.25 · Nebius $3.85 ·
+  Crusoe $3.90 · Modal $3.95.
+- **Spot/preemptible** (needs frequent checkpointing — a preempt mid-RL is
+  costly): DataCrunch H100 $1.14 / H200 $1.40; Nebius H100 $2.15 / H200 $2.45;
+  TensorDock H100 spot ~$1.91. Prime Intellect marketplace ~$1.90-2.69 H100
+  (aggregator, unverified).
+- **Managed RL (skip building the trainer):** Fireworks RFT bills per-GPU-hour
+  ($7/hr H100/H200) and already implements GRPO/DAPO/DRO — but managed platforms
+  serve their own model catalog; **custom trust_remote_code hybrid MoE/Mamba arch
+  support is unconfirmed and the likely blocker.** Predibase RFT similar, rate
+  card not public. Together = per-token only (not per-hour RFT).
+- **Read for our case:** for a first RL proof (~$80-150, 1x H200, checkpoint to
+  storage), the harness (serving+sweeps+volumes) already lives on Modal, so the
+  integration cost of a second provider likely outweighs the ~$0.50-0.90/hr
+  on-demand saving. If RL becomes sustained, Massed Compute/DataCrunch on-demand
+  ($3.62-4.00) or DataCrunch spot ($1.40, with checkpointing) undercut Modal
+  meaningfully. Highest-leverage unknown to resolve BEFORE committing to build a
+  GRPO trainer: whether any managed-RFT vendor (Fireworks) can ingest this custom
+  arch — if yes, it removes the single biggest Phase-C engineering risk.
