@@ -1273,3 +1273,48 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   35B just "35B-MoE" (no A3B/Mamba/GDN mention); our hands-on serving of the
   actual weights (custom arch via trust_remote_code, --gdn-prefill-backend)
   is the stronger evidence for the hybrid-GDN architecture.
+
+## 2026-07-09 · P6-B · PRE-REGISTRATION (best-of-k self-verification selection rule)
+- Pre-committed BEFORE building/running the analyzer (integrity guard: this
+  entry is committed first; the rule cannot be retrofit to the data).
+- **Question.** Ornith reaches pass@5 = 29/40 (72.5%) on v001 (run
+  `20260707T215242-v001-baseline`) but only 20/40 majority-solve — +9 tasks of
+  headroom. Does a LEGITIMATE, oracle-blind selector recover ≥+5 of it? The
+  worker's own VERIFY signal is legitimate because the hidden FAIL_TO_PASS
+  tests (`tests.patch`) are applied ONLY in the sealed Phase-B verdict sandbox
+  (modal_app.py:741, after resetting worker-touched test files:731-739); the
+  worker's Phase-A VERIFY run exercises the BASE tests — a real, strictly
+  weaker self-signal, never the oracle.
+- **Selection rule (frozen).** Deterministic, oracle-blind, per task over its
+  5 trials; the analyzer picks exactly ONE trial per task:
+  - **Tier 1** — trials in which the worker EXECUTED the VERIFY.txt command via
+    a Bash tool call (detected: a Bash tool_use whose command contains the
+    task's verify-command signature, typically right after a Read of
+    /testbed/VERIFY.txt) and whose LAST such execution's tool_result has
+    `is_error == false`. Among these, pick the LOWEST trial index.
+  - **Tier 2** (no tier-1 trial for the task) — trials whose worker.diff
+    touches package source (root-level scratch files excluded, per the P5 T6
+    no-source-edit definition). Pick the lowest index.
+  - **Tier 3** (neither) — the lowest-index VALID trial (fallback = current
+    single-shot behaviour, no selection benefit).
+  - A task is `selected_solve` iff the ORACLE verdict (trials.jsonl) of the
+    SELECTED trial is pass. Ties broken by lowest trial index throughout.
+- **Metrics reported.** selected_solve/40 per run; lift vs majority-solve (20
+  v001 / 28 recapture) and vs mean pass@1 (0.467 v001 / 0.655 recapture);
+  ceiling = pass@5 (29 / 33). Signal quality: P(oracle pass | tier-1) vs
+  P(oracle pass | tier-2/3), and a confusion matrix over the 122/200 v001
+  trials that ran VERIFY (worker-VERIFY-pass × oracle-pass).
+- **Pre-committed gate.** PASS iff **selected_solve ≥ 25/40 on v001 (≥+5 over
+  majority-solve 20) AND the SAME frozen rule gives selected_solve > 28 on the
+  recapture run `20260708T132147-v002-completion-contract`** (directional
+  replication). Both full-transcript runs are in-repo, so this costs ~$0.
+  - FAIL (below either) → the selection signal is too weak; ship the
+    negative-result write-up (E). Phase A does NOT open.
+  - BORDERLINE (v001 selected_solve 24–26, or replication marginal) → ONE
+    optional fresh confirming sweep (≤$5) with the rule frozen, then decide.
+  - PASS → the selection signal is real; it is the new-outside-evidence that
+    opens Phase A (skill-library co-evolution), whose skill-admission engine is
+    this same self-verification signal.
+- Analyzer: `infra/selection_analysis.py` (to build next), reusing
+  `export_trajectories.py` transcript parsing; unit-tested; every number
+  reproducible from `python3 infra/selection_analysis.py <run_id>`.
