@@ -1,0 +1,32 @@
+id: v005-script-first
+parent: v001-baseline
+hypothesis: >-
+  The plurality of v001 failures are harness-friction (58 of 107 non-pass
+  trials, 54%, in run 20260707T215242-v001-baseline), and 54/200 trials ended
+  in an empty diff. v003's HARD Stop-hook gate mechanically forcing action
+  still left 25/200 empty_diff (run 20260708T015417): discipline was not the
+  bottleneck, so the cause is interaction geometry, not motivation. A bf16
+  LoRA cloning Ornith's own passing trajectories scored net -2
+  (run 20260708T181500 vs 20260708T132147): imitation also failed. Ornith-35B
+  was RL-trained authoring and driving its own scripts/pipelines, so Claude
+  Code's fine-grained interactive Edit choreography is a foreign interaction
+  geometry for it. The one change: append a "Work through scripts" section to
+  the v001 worker CLAUDE.md (parent prompt otherwise verbatim) that frames the
+  task as a native script → run → read → adjust Bash loop — write a repro
+  script first, apply edits from Bash however is fastest, re-run to converge.
+  The Edit and Write tools remain available and permitted; this reshapes the
+  default work mode, it does not remove tools. Falsifiable prediction, two
+  stages. (1) Manipulation check: on django__django-12209,
+  scikit-learn__scikit-learn-25931, astropy__astropy-13453, and
+  pytest-dev__pytest-7571 × 3 trials each, the worker writes AND executes at
+  least one scratch script via Bash in >=8/12 valid trials; if not, the geometry
+  is not being adopted and v005 is rejected without spending a full sweep.
+  (2) Full sweep: v005 lifts dev pass rate by >=5 points paired vs v001, with
+  the gains concentrated in the harness-friction mass, and no-source-edit
+  trials (excluding scratch files) fall to <=32 (>=40% below v001's 54/200).
+  Rejection conditions (any one closes the scaffold axis for good): the
+  manipulation check fails, OR the paired lift is <+5 points, OR stalls merely
+  convert into wrong-edit verify_exit_nonzero trials rather than passes (the
+  v003 conversion pattern).
+date: 2026-07-09
+status: proposed
