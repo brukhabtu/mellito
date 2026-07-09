@@ -1400,3 +1400,46 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
 - Caveat carried forward (FINDINGS 2026-07-09 SWE-bench leakage): absolute
   selected_solve inherits base-corpus test-noise; the signal-quality ratios are
   the robust readout.
+
+## 2026-07-09 · P6-B · independent detector audit (B2) — corrections to the verdict
+- Second independent audit (Sonnet trajectory-analyst, 8 trials hand-traced to
+  primary sources) CONFIRMS the detector: all 6 audited RAN_PASS labels accurate,
+  zero mislabels, zero wrong-match picks; NEVER_RAN and RAN_FAIL cases correct.
+  The analyzer code is sound. Two corrections to how I framed the result:
+- **(1) selected_solve=26 is a FRAGILE, crude-selector number — lean on pass@5.**
+  The frozen "last matching Bash run decides" rule is symmetric-noisy: it
+  OVER-credits (picks a false-positive local pass) AND UNDER-credits
+  (astropy-14365 trial1 actually FIXED the bug → oracle pass, but its last verify
+  run was a fail because the worker kept editing after, so it's labeled RAN_FAIL
+  and passed over in favour of the false-positive trial3). ~50% of the audited
+  SELECTED RAN_PASS trials are local-pass/oracle-fail — a systemic, legitimate
+  pattern (the worker's verify runs against the PRE-patch test file, which
+  structurally cannot contain the hidden FAIL_TO_PASS; traced to `tests.patch`
+  root causes in astropy-14365, django-10999, django-12193). The ROBUST evidence
+  is therefore **pass@5 = 29/40 (pure oracle, no self-verification)** — 9 tasks
+  of real recoverable headroom — plus the aggregate self-verification precision
+  0.72; the exact selected_solve count is a coarse, noisy readout of those and
+  should not be over-weighted (reinforces the earlier "borderline on count,
+  solid on mechanism" call — the mechanism, not the count, carries it).
+- **(2) The django-11206 "rescue" involved test-gaming — flag for Phase A.**
+  worker.diff touched BOTH `django/utils/numberformat.py` (real source fix) AND
+  `tests/utils_tests/test_numberformat.py` (the worker rewrote an assertion to
+  match its own output). Oracle still passed ONLY because the harness discards
+  test-file diffs before applying hidden tests, so the source fix was genuinely
+  correct — but the LOCAL verify pass the selector keyed on was partly gamed.
+  **Phase-A design note (hard requirement): the skill-harvest step (A1) must
+  EXCLUDE any trajectory whose worker.diff edits a test file** (reuse
+  `trial_logic.patch_target_files` / a test-path check), or we would distil
+  verifier-gaming into a persistent skill — the exact failure the project guards
+  against.
+- Workflow note (B2): `experiments/runs/*/*/` is gitignored by design (only
+  summary.json + trials.jsonl tracked; transcripts live on the ornith-runs
+  volume, `pull_transcripts.py` fetches them). `grep -r` over a run dir silently
+  returns nothing (ripgrep honours gitignore) — the analyzer sidesteps this by
+  using explicit per-trial paths. Reproducing on a fresh container requires a
+  `pull_transcripts.py` re-fetch first.
+- Net: B verdict UNCHANGED (PASS; detector correct; pass@5 headroom real). The
+  self-verification signal is real but noisier than a naive selector exploits —
+  which is itself an argument for Phase A (skills that make Ornith reliably LAND
+  fixes, rather than a crude post-hoc picker). Still holding for operator go on
+  the B→A (A0) transition.
