@@ -1,0 +1,27 @@
+id: v004-localization-discipline
+parent: v002-completion-contract
+hypothesis: >-
+  The self-direction axis (v002 prose, v003 hook) capped at ~+3 vs v001 because
+  the residual is model capability, and the single largest capability sub-cluster
+  in the baseline taxonomy is WRONG-LOCATION edits: the model edits a plausibly
+  named file that is not on the live code path (django-12193 edited array.py not
+  CheckboxInput ×4; django-12039 edited IndexColumns not Columns ×3; django-11333
+  broke get_resolver.cache_clear ×3). Some of these are redirectable, not pure
+  capability. v004 keeps the v002 contract verbatim and adds ONE change: a
+  "localization discipline" section — reproduce the bug and read the real
+  traceback before editing, trace the symptom to the function that actually
+  produces it (the file whose name matches the feature is often not the buggy
+  one), and after editing re-run the reproduction to confirm the edit is on the
+  live path (revert if not). Falsifiable prediction: v004 converts a meaningful
+  share of the wrong-file capability fails to passes, reaching net >=+5 paired vs
+  v001 (clears the MDD floor), with the gain concentrated on the wrong-location
+  tasks (django-12193/12039/11333) rather than the self-direction tasks v002
+  already won. If v004 misses +5, the P3 stopping rule fires (3 consecutive
+  non-keeps: v002, v003, v004) and the search converges to a scaffold ceiling of
+  ~+3, indicating P4 (LoRA) as the rung that must break the capability wall.
+date: 2026-07-08
+status: rejected
+# rejected: net 0 paired vs v001 (run 20260708T030102), net -3 vs parent v002.
+# The targeted wrong-file cluster did not move at all (capability, not prompt-
+# fixable); added prose degraded v002. Strike 3 -> P3 stopping rule fires; the
+# scaffold search has converged at a +3 ceiling (v002), below the +5 gate.

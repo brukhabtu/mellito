@@ -8,10 +8,13 @@ either way.
 ## North-star goal
 
 By ~2026-09-15: route a defined class of coding tasks to self-hosted
-Ornith-35B inside Claude Code at **≥30% lower cost-per-solved-task than
-Haiku 4.5**, at a pass rate **within 5 points** of it on holdout — or a
-documented negative result explaining why. The published recipe is a
-first-class deliverable in both outcomes.
+Ornith-35B inside Claude Code where the improved system (scaffold and/or
+weights) **beats stock Ornith + Claude Code by ≥+5 paired tasks on dev,
+confirmed on holdout** — or a documented negative result explaining why.
+Cost-per-solved-task on our own GPU stays a tracked observability metric, not
+a comparison bar (hosted reference baselines removed by operator redirect,
+2026-07-09). The published recipe is a first-class deliverable in both
+outcomes.
 
 ## Goals & gates
 
@@ -22,17 +25,17 @@ first-class deliverable in both outcomes.
   determinism check, provenance recorded. Gate: corpus manifest complete;
   holdout contains only own-repo/post-cutoff.
 - **G3 Measurement.** Every trial emits verdict/tokens/gpu-seconds/wall-clock
-  under a run ID; baseline table for Ornith / Haiku 4.5 / Sonnet 5 on the
-  same corpus with paired stats. Gate: FINDINGS.md baseline entry exists.
+  under a run ID; baseline table for Ornith on the corpus with paired stats.
+  Gate: FINDINGS.md baseline entry exists.
 - **G4 Optimized scaffold.** A variant beating v001 by ≥5 points paired on
   dev, dev/holdout gap ≤5 points, lineage in git. Gate: the single unlocked
   holdout run confirms.
 - **G5 (conditional) LoRA.** Adapter converts surviving format-class
   failures without regressing smoke suite or holdout.
-- **G6 Decision.** Routing recommendation with blended-cost math, kill
-  criterion explicitly evaluated, write-up shipped.
+- **G6 Decision.** Base-vs-tuned verdict with $/solved-task observability
+  math, kill criterion explicitly evaluated, write-up shipped.
 
-## Status (2026-07-07)
+## Status (2026-07-08)
 
 Live gate state is mechanical: `python3 infra/status.py`. Full log:
 findings/FINDINGS.md. Summary of where the project stands:
@@ -51,12 +54,71 @@ findings/FINDINGS.md. Summary of where the project stands:
   holdout is a best-effort *held-out-repos* proxy, not a strict post-cutoff set
   (weaker contamination guarantee — see tasks/schema.md). Gate closes when the
   operator moves ≥15 staged specs into tasks/holdout/.
-- **G3 Measurement — machinery built, first baseline pending.** `sweep_stats.py`
-  (per-task, paired-vs-parent, provenance slices, Wilson CI, cost) and
-  `run_sweep` are wired and unit-tested; the hidden-tests verdict path is proven
-  locally. Remaining: `run_trial`'s worker body (modal.Sandbox per task + Claude
-  Code CLI vs the endpoint), then the Ornith / Haiku 4.5 / Sonnet 5 baseline.
-- **G4–G6 — not started.**
+- **G3 Measurement — runner validated, Ornith baseline running.** `run_trial`
+  (modal.Sandbox per task + Claude Code CLI vs the endpoint via a LiteLLM
+  Anthropic-compat proxy), `run_sweep`, and `sweep_stats.py` are built,
+  adversarially reviewed (10 confirmed bugs fixed), and validated end-to-end: a
+  proof-of-one PASS (Ornith solved django-10973 with a real source fix, 27
+  turns) and a clean 3×3 mini-sweep (0 invalid across django/pylint/astropy).
+  The full 40×5 **Ornith v001 baseline** is DONE (run `20260707T215242-v001-baseline`):
+  **20/40 dev tasks solved = 50%** (CI [35, 65]), $0.086/solved, 1 invalid/200.
+  This is the reference every scaffold variant pairs against.
+- **G4 Optimized scaffold — P3 search converged, gate NOT met by scaffold
+  alone.** Three mutations tried, all rejected on the pre-committed +5 MDD floor
+  (paired vs v001): v002-completion-contract (self-direction prose) **+3**,
+  v003-stop-hook-enforce (mechanical empty-diff gate) **+2**, v004-localization-
+  discipline (trace-before-edit prose) **0**. The stopping rule (3 consecutive
+  non-keeps) has fired. Key result: **scaffold complexity is inversely correlated
+  with Ornith's performance** — the shortest high-agency prompt (v002) is the
+  peak at +3, every added mechanism/instruction did worse, and the targeted
+  wrong-file capability cluster proved completely prompt-immune (v004 moved it
+  zero). The residual failure mass is model-level (43% capability + variant-
+  independent greeting-resets and a `result:""` SDK-stall floor), not scaffold-
+  addressable. No variant cleared the keep bar, so there is nothing to confirm on
+  the single holdout run; G4 stays open. Runs: `20260708T004754` (v002 clean),
+  `20260708T015417` (v003), `20260708T030102` (v004). See findings/FINDINGS.md.
+- **G5 LoRA — RAN, gate NOT met (LoRA not kept).** A rank-32 **bf16** LoRA
+  (not QLoRA — Unsloth advises against 4-bit for this Qwen3.5-MoE hybrid;
+  attention-only q/k/v/o_proj, router + GDN/Mamba mixer excluded) was trained on
+  the 89-example v002 think-preserving SFT set (adapter `lora-20260708T162249`,
+  train loss 0.258) and served on the FP8 base via vLLM `--lora-modules` (no
+  merge/requantize needed). Smoke re-gate clean (20/20, 0 leaks). **Dev paired
+  vs the same-scaffold base arm: +1/−3/=36, net −2** (LoRA run
+  `20260708T181500-v002-completion-contract` vs base `20260708T132147-…`) —
+  below the +5 keep gate, and this was the IN-DISTRIBUTION case (trained on
+  these dev tasks' own passing trajectories). Mechanism: the clone reinforced
+  the **under-action** failure mode (empty-diff regressions, multi-hundred-turn
+  thrashing) rather than fixing it — SFT on the policy's own successes can't
+  penalize under-action; that failure wants RL, not imitation. LoRA NOT kept;
+  holdout not unlocked.
+- **Cycle complete → kill criterion at trigger; scaffold axis CLOSED.** One
+  full scaffold+LoRA alternation cycle is done: scaffold +3 (P3), LoRA −2
+  (P4), both below +5, no kept variant (v001-baseline is the reference). The
+  one pre-registered exception to the stopping rule — **P5 v005-script-first**
+  (interaction-geometry hypothesis) — failed its manipulation check NO-GO on
+  all three pre-committed criteria (run
+  `20260709T014057-v005-script-first-partial`, $0.20): scripts adopted as
+  ritual, 9/12 scratch-only diffs vs v001's 9/20 no-source-edit on the same
+  tasks. Four intervention classes (prose/forcing/imitation/geometry), one
+  invariant failure mode (under-action). Per the 2026-07-09 fork memo
+  (FINDINGS) the sanctioned next step is the **$10 best-of-k /
+  self-verification precondition test** (evidence: pass@5 = 29/40 = 72.5% vs
+  majority-solve 20/40 on run `20260707T215242-v001-baseline` — +9 tasks of
+  selection headroom); kill <+5 → negative-result write-up, pass ≥+5 → new
+  outside evidence for the RL rung. **Operator decision point.**
+- **G6 — not started.** Blocked on the operator decision above.
+
+### Sequencing decision (2026-07-09, operator-directed; supersedes 2026-07-08)
+
+Hosted-Claude reference baselines are **removed, not deferred**. The project's
+question is now entirely internal: *does our improvement beat stock Ornith
+inside Claude Code on the paired dev/holdout gate?* The external-bar question
+(*did we clear the bar that justifies self-hosting vs a hosted model?*) is out
+of scope for this project; the hosted-worker code path has been deleted from
+the harness so it cannot be run by accident. The v001 Ornith baseline (run
+`20260707T215242-v001-baseline`) is the single reference all deltas pair
+against. (The earlier 2026-07-08 decision had merely deferred the hosted
+columns to pre-G6; this replaces it.)
 
 ## Decision rules (pre-committed — surface, don't re-litigate)
 
@@ -65,10 +127,13 @@ findings/FINDINGS.md. Summary of where the project stands:
   below that; a "trend" is not a keep.
 - **Stopping rule (Phase 3):** stop the search after 3 consecutive
   non-keeping mutations, then run the holdout gate.
-- **Kill criterion:** if after one scaffold+LoRA alternation cycle,
-  cost-per-solved-task doesn't beat Haiku 4.5 by ≥30% OR dev pass rate is
-  >10 points behind Haiku, the project ships as a negative result +
-  write-up. No extension without new outside evidence.
+- **Kill criterion (restated 2026-07-09, base-vs-tuned):** if after one
+  scaffold+LoRA alternation cycle the improved system does not beat stock
+  Ornith + Claude Code by ≥+5 paired tasks on dev (confirmed on holdout once
+  staged), the project ships as a negative result + write-up. No extension
+  without new outside evidence. *Status: AT TRIGGER — the cycle is complete
+  with no kept variant; the $10 best-of-k precondition test (fork memo,
+  FINDINGS 2026-07-09) is the sanctioned evidence probe.*
 - **Contamination tripwire:** improvement on public-pretrained tasks that
   isn't mirrored on own-repo tasks is treated as contamination, not
   progress.
@@ -121,18 +186,24 @@ and old. Blend:
   Anthropic-compat proxy. Gate G1.
 - **P1 Corpus (days, not the week originally planned).** Import + curate per
   strategy above. Gate G2.
-- **P2 Baselines (a day of runs).** Ornith v001, Haiku 4.5, Sonnet 5 on dev;
-  full trajectory logging from run one (it is future training data). Gate G3.
-- **P3 Scaffold search (2–3 weeks; most expected gains).** Loop:
+- **P2 Baselines.** Ornith v001 on dev is the reference all deltas pair
+  against; full trajectory logging from run one (it is future training data).
+  Gate G3 closes on the Ornith baseline entry. Hosted reference baselines
+  were removed by the 2026-07-09 redirect (see §Status sequencing decision) —
+  all comparisons are internal, base-vs-tuned.
+- **P3 Scaffold search (2–3 weeks; most expected gains) — the immediate next
+  priority.** Loop:
   run-eval → classify-failures → propose-mutation → operator keeps/rejects.
   Highest-leverage axis: degree of worker self-direction (Ornith's weights
   expect to write their own inner loop). Operator remains the selection step
   for at least the first two cycles; promote to autonomous only after the
   guardrails have caught a real mistake.
-- **P4 LoRA (conditional on format-class residue).** Unsloth QLoRA on
+- **P4 LoRA (conditional on format-class residue).** **bf16** LoRA (NOT
+  QLoRA — Unsloth advises against 4-bit for this Qwen3.5-MoE hybrid) on
   passing trajectories under the winning scaffold; `<think>` preserved in
-  targets; rank 32 / α 64; attention + shared layers only, router excluded.
-  Re-gate smoke + dev + holdout.
+  targets; rank 32 / α 64; attention only (q/k/v/o_proj), router + GDN/Mamba
+  mixer excluded. Re-gate smoke + dev + holdout. **RAN 2026-07-08 — net −2 on
+  dev, not kept; see §Status / FINDINGS.**
 - **P5 Alternate.** Reopen P3 briefly on new weights; 1–2 alternations is
   realistic convergence. Then G6.
 

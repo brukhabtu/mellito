@@ -40,18 +40,33 @@ def findings_has(pattern):
 
 
 def main() -> int:
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--no-smoke", action="store_true",
+                    help="skip the live G1 smoke run (it cold-boots the H100 — "
+                         "a few min + GPU $). Use for a quick, free gate glance; "
+                         "G1 is then reported as assumed-met from its last close.")
+    args = ap.parse_args()
+
     gates = {}
 
     print("G1 Serving")
-    smoke = subprocess.run(
-        ["modal", "run", "infra/modal_app.py::smoke"],
-        cwd=ROOT, capture_output=True, text=True,
-    ) if shutil_which("modal") else None
-    gates["G1"] = check(
-        smoke is not None and smoke.returncode == 0,
-        "smoke suite exits 0",
-        "modal CLI missing" if smoke is None else f"exit {smoke.returncode}",
-    )
+    if args.no_smoke:
+        # Don't spin the GPU just to read gate state. Assume G1 (last closed at
+        # smoke 20/20) so the frontier still reflects G2+; re-run without the
+        # flag to actually re-validate serving.
+        check(True, "smoke suite", "skipped (--no-smoke; assumed met)")
+        gates["G1"] = True
+    else:
+        smoke = subprocess.run(
+            ["modal", "run", "infra/modal_app.py::smoke"],
+            cwd=ROOT, capture_output=True, text=True,
+        ) if shutil_which("modal") else None
+        gates["G1"] = check(
+            smoke is not None and smoke.returncode == 0,
+            "smoke suite exits 0",
+            "modal CLI missing" if smoke is None else f"exit {smoke.returncode}",
+        )
 
     print("G2 Corpus")
     dev, hold = count_tasks("dev"), count_tasks("holdout")

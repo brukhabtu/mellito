@@ -1,0 +1,27 @@
+id: v003-stop-hook-enforce
+parent: v002-completion-contract
+hypothesis: >-
+  v002 proved the self-direction axis (reproducible wins on harness-friction
+  tasks) but lost 2 tasks because Ornith DISOBEYS the prose "never stop / do not
+  ask for direction" clause — it ends its turn with an empty diff asking a
+  nonexistent user which fix to apply (FINDINGS 2026-07-08, run 20260708T004754).
+  Prose is not the lever. v003 keeps the v002 CLAUDE.md verbatim and adds ONE
+  mechanism: a Stop hook that refuses to let the worker end its turn while the
+  working tree contains no source edit (git status --porcelain excluding the
+  harness files), re-injecting a "no human is available — apply your fix now"
+  continue prompt, bounded to 4 nudges so a stuck worker fails cleanly rather
+  than timing out. This converts the unreliable prose contract into a
+  harness-enforced gate against exactly the empty-diff / ask-for-direction loss
+  mode. Falsifiable prediction: v003 recovers the 2 v002 regressions
+  (astropy-13453, sklearn-25931) and holds the v002 wins, reaching net >=+5
+  paired vs v001 (clears the MDD floor). If v003 instead just converts
+  empty-diff stalls into wrong-edit fails (same verdict) or regresses the wins,
+  the "make it act" thesis is exhausted and the next axis is the per-Read
+  malicious-code-reminder derail (parked v004 candidate).
+date: 2026-07-08
+status: rejected
+# rejected: net +2 paired vs v001 (run 20260708T015417), below +5 MDD floor and
+# within noise of parent v002 (net -1 vs v002). Stop hook fires correctly but
+# the 2 target losses are capability-bound (forced edit is wrong, not a
+# recoverable stall) and a portion of empty_diff is an un-hookable SDK stall.
+# Self-direction axis exhausted at ~+3. Strike 2 of the stopping rule.

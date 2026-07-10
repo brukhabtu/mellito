@@ -3,3 +3,8 @@ __pycache__/
 .holdout-unlocked
 .budget-unlocked
 .env
+
+# Per-trial artifacts (transcripts/diffs/verdicts) live on the ornith-runs
+# Modal volume; pull_transcripts.py fetches them locally for analysis. Keep only
+# summary.json + trials.jsonl tracked, never the bulky pulled trees.
+experiments/runs/*/*/

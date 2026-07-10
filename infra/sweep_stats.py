@@ -20,6 +20,15 @@ import math
 from collections import defaultdict
 from pathlib import Path
 
+# Cost-attribution throughput constant, shared with trial_logic (the single
+# source of truth). Imported so the per-trial attribution string can never drift
+# from the divisor run_trial actually uses; the literal is a fallback for when
+# this module is imported without trial_logic on the path.
+try:
+    from trial_logic import AGG_TOK_PER_S
+except ImportError:
+    AGG_TOK_PER_S = 908.0
+
 
 def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     """95% Wilson score interval for k passes of n valid trials."""
@@ -106,6 +115,9 @@ def by_provenance(per_task_stats: dict) -> dict:
 def cost(results: list, usd_per_gpu_hour: float) -> dict:
     gpu_s = sum(r.get("gpu_seconds", 0.0) for r in results)
     usd = gpu_s / 3600.0 * usd_per_gpu_hour
+    # api_usd is a legacy field (hosted workers removed 2026-07-09); always 0
+    # on new runs, kept in the fold so historical rows still sum correctly.
+    api_usd = sum(r.get("api_usd", 0.0) for r in results)
     solved_tasks = sum(1 for s in per_task(results).values() if _solved(s))
     tin = sum(r.get("tokens_in", 0) for r in results)
     tout = sum(r.get("tokens_out", 0) for r in results)
@@ -113,7 +125,12 @@ def cost(results: list, usd_per_gpu_hour: float) -> dict:
     return {
         "gpu_seconds": round(gpu_s, 1),
         "usd": round(usd, 4),
-        "usd_per_solved_task": round(usd / solved_tasks, 4) if solved_tasks else None,
+        "api_usd": round(api_usd, 4),
+        "usd_per_solved_task": round((usd + api_usd) / solved_tasks, 4)
+        if solved_tasks else None,
+        # How the two spend figures are derived, for the operator reading a run.
+        "gpu_attribution": {"per_trial": f"tokens_out/{AGG_TOK_PER_S:g}",
+                            "ledger": "max(sum, wall)"},
         "tokens_in": tin, "tokens_out": tout,
         "trials": len(results), "valid_trials": len(valid),
         "invalid_trials": len(results) - len(valid),
@@ -123,12 +140,13 @@ def cost(results: list, usd_per_gpu_hour: float) -> dict:
 
 
 def summarize(run_id: str, variant: str, parent: str | None, results: list,
-              parent_per_task: dict | None, usd_per_gpu_hour: float) -> dict:
+              parent_per_task: dict | None, usd_per_gpu_hour: float,
+              worker_model: str | None = None) -> dict:
     pt = per_task(results)
     solved = sum(1 for s in pt.values() if _solved(s))
     valid_tasks = sum(1 for s in pt.values() if s["valid"])
     lo, hi = _wilson(solved, valid_tasks)
-    return {
+    out = {
         "run_id": run_id, "variant": variant, "parent": parent,
         "tasks": len(pt), "valid_tasks": valid_tasks,
         "solved_tasks": solved,
@@ -141,6 +159,9 @@ def summarize(run_id: str, variant: str, parent: str | None, results: list,
                          "invalid": v["invalid"], "pass_rate": v["pass_rate"],
                          "provenance": v["provenance"]} for k, v in pt.items()},
     }
+    if worker_model is not None:
+        out["worker_model"] = worker_model
+    return out
 
 
 def write_summary(run_dir: Path, summary: dict) -> Path:
