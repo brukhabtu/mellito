@@ -282,7 +282,12 @@ def make_exec_fn():
             p = subprocess.run(
                 ["bash", "-lc", command], cwd="/testbed",
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                timeout=PER_COMMAND_TIMEOUT, text=True, errors="replace")
+                # universal_newlines, not text=: the driver runs under each
+                # testbed's own python, and the oldest envs are 3.6 (text= is
+                # a 3.7 alias; it crashed every django-11066 trial in run
+                # 20260710T210023 before the first command executed).
+                timeout=PER_COMMAND_TIMEOUT, universal_newlines=True,
+                errors="replace")
             out = (p.stdout or "") + f"\n[exit code: {p.returncode}]"
         except subprocess.TimeoutExpired as e:
             partial = e.output or ""
