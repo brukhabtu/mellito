@@ -1649,3 +1649,44 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   disturb an already-correct workspace (preamble mitigates; measured in the
   isolation pairing); false positives stop early (no worse than today).
   Budget: ~$46 spent; P8 ceiling ~$8 (proof-of-one ~$0.5 + sweep ~$4-7).
+
+## 2026-07-10 · P8 · GATE PASSED — net +8/−0 vs stock; system clears the project bar
+- Final sweep run `20260710T154237-v001-baseline` (v001 scaffold, worker=
+  ornith-lora `pref-20260710T120439`, 40×5, attempts=3, $2.32): **solved 28/40
+  (70%), 130/200 passing trials, 2 invalid.**
+- **PRE-REGISTERED GATE (178c0f9): PASS. Paired vs stock single-shot base
+  (run 20260707T215242): +8 / −0 / =32, net +8** (bar ≥+5). Wins include three
+  never-or-nearly-never-solved tasks (django-12209 0→0.6, pylint-6386 0→0.6,
+  django-11333 0.2→0.8). Isolation pairing vs tuned single-shot (run
+  20260710T124151): +6/−1/=33 net +5 — the wrapper's own marginal
+  contribution, on top of tuning's +3.
+- **Cost: $0.083/solved vs stock's $0.086 — UNCHANGED** despite 3-attempt
+  ceiling: early-stop held mean attempts to 1.44 (123×1 / 65×2 / 10×3), and
+  the extra inference is paid back by 40% more solved tasks. empty_diff
+  collapsed 54 → 4 (stock → wrapped). stop_reason: 194 self_verify_pass /
+  4 attempts_exhausted / 2 exceptions.
+- Incidents (logged): (a) the first P8.4 launch (run 20260710T144056) died
+  with a silent client exit ~55 min in; orphaned app stopped (~$1-1.5 sunk,
+  unledgered), sweep relaunched under direct supervision — agent-owned sweep
+  clients have now died twice; long sweeps run under orchestrator supervision
+  from here. (b) While committing this entry, the holdout guard hook BLOCKED
+  a Bash command whose heredoc contained the holdout directory's literal path
+  in prose — a string-match false positive, no access attempted; recorded per
+  the working agreement and the prose rephrased. The seal held.
+- Caveats carried honestly: (1) dev-set contamination is the known risk — the
+  adapter trained on these tasks' own trajectories; the pre-registered answer
+  is the HOLDOUT confirmation, now the only remaining step; (2) the test-edit
+  drift rate on this run is not yet audited (guarded at verdict level by the
+  harness test-reset; audit alongside holdout); (3) self-verify false
+  positives still cap per-trial reliability (the 0.72 ceiling) — visible as
+  68 fails that stopped early believing they'd passed.
+- **What the composed system is:** stock Claude Code + minimal v001 prompt +
+  a $20 preference adapter + a ~100-line attempts loop that gives the model
+  its trained-in two-stage geometry (persistent per-task scaffold, self-
+  verified stop). Each piece was validated separately before composition
+  (C1: adapter +3; B: the 0.72 stop signal; A0: the context channel; P8
+  isolation: wrapper +5).
+- **NEXT (per pre-registration): the operator moves ≥15 staged specs into the
+  sealed holdout directory and creates the unlock flag → single unlocked
+  holdout run → dev/holdout gap ≤5 confirms → G4 closes POSITIVE.** Project
+  spend ≈ $52 of $150.
