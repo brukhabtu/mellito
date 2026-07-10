@@ -1690,3 +1690,33 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   sealed holdout directory and creates the unlock flag → single unlocked
   holdout run → dev/holdout gap ≤5 confirms → G4 closes POSITIVE.** Project
   spend ≈ $52 of $150.
+
+## 2026-07-10 · P9 · PRE-REGISTRATION (close-out battery: controls + holdout gate)
+- Measurement-only controls (P8 remains the last INTERVENTION; nothing new is
+  launched off these results — they annotate the write-up and at most select
+  among already-built artifacts, any such selection to be holdout-confirmed):
+  - **D — stock · Claude Code · wrapped (dev 40×5, attempts=3, ~$3).** The
+    missing model×loop cell. Registered readings: D≈28 → wrapper is the whole
+    story (simpler shipping recipe; holdout battery then gains a wrapped-stock
+    arm); D≈23–25 → genuine tuning+wrapper composition; D≈20 → wrapper
+    requires the tuned policy.
+  - **E — stock · native minimal loop · dev (40×5, ~$3).** Mini-SWE-agent-
+    pattern driver (the vendor's own minimal eval harness): one session, text
+    shell-REPL loop against our endpoint, model decides when done, same
+    per-trial timeout, driver frozen before first run (no tuning of it, ever).
+    Registered prediction (mismatch thesis): E lands meaningfully ABOVE the
+    stock Claude Code single-shot 20/40 (run 20260707T215242).
+  - Test-edit drift audit of run 20260710T154237 (analysis only, $0).
+  - CUT (registered as deliberately not run): single-shot patch-generation
+    ("no harness") — the retrieval choice confounds it; tuned-native — the
+    adapter is Claude-Code-format-trained, uninterpretable outside it.
+- **Holdout confirmation battery (the gate; runs ONCE after the operator
+  stages ≥15 specs into the sealed holdout directory and creates the unlock
+  flag; no iteration afterward):** arms = stock·CC·single-shot (the
+  pre-registered gate baseline) and tuned·CC·wrapped; PLUS wrapped-stock IFF
+  dev cell D lands within 2 tasks of C's 28. Confirmation criterion: the
+  paired system-vs-baseline delta on holdout is within 5 points of the dev
+  delta (+8), per the original G4 gap language; absolute rates reported
+  alongside. PASS → G4/G6 close positive. FAIL → contamination is the
+  headline finding and the write-up says so.
+- Budget: ~$55 spent; battery ceiling ~$13 total.
