@@ -1760,3 +1760,17 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
 - astropy's rev-2 drop (3/3 → 1/3, two 60-turn `empty_diff` loops) is NOT
   explained by this bug (astropy's env is newer); judged against liveness-3
   after the fix. Liveness-3 launched: same 2×3 partial.
+
+## 2026-07-10 · P9-E · liveness-3 (run `20260710T212327`): driver STABLE — 6/6 pass, full E sweep unblocked
+- Post-fix liveness (2 tasks ×3, $0.06): **6/6 trials pass**, all ended
+  `native_done` (model replied without a tool call after its own verify).
+  django-11066: 3/3 in 5–6 turns (~75s/trial). astropy-13453: 3/3 in 38–52
+  turns — rev-2's 1/3 was collateral of the same runtime instability, not a
+  protocol regression. Zero invalids, zero 60-turn loops.
+- Native-arm evidence so far is consistent and striking: astropy-13453, a
+  chronic under-action loss inside Claude Code, is now 6/6 across liveness
+  runs when Ornith speaks its trained tools-API dialect directly.
+- Driver re-frozen (py3.6 compat was the last change). **Full E sweep (dev
+  40×5, ~$3) queued to launch after the D sweep completes** — both arms share
+  one serve() GPU and concurrent load would inflate wall-clock on D, a
+  measurement cell.
