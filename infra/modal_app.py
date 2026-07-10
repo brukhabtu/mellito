@@ -455,8 +455,18 @@ def smoke(quick: bool = False, model: str = "ornith-35b"):
 # actually runs); it needs no GPU/vLLM, so a slim image keeps its cold start
 # small. trial_logic ships as local source so the pure verdict/parse/env logic
 # is importable in the container.
-harness_image = modal.Image.debian_slim(python_version="3.12").add_local_python_source(
-    "trial_logic"
+# P8: run_trial imports selection_analysis in-container to read a just-finished
+# session's transcript for the worker's own VERIFY signal (the attempts stop
+# condition). selection_analysis pulls in export_trajectories + sweep_stats at
+# module load, and both selection_analysis and export_trajectories `import yaml`
+# at top level, so the closure needs pyyaml + all three local modules shipped —
+# not just the two the P8 pre-registration named (it undercounted the closure).
+harness_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install("pyyaml")
+    .add_local_python_source(
+        "trial_logic", "selection_analysis", "export_trajectories", "sweep_stats"
+    )
 )
 
 
@@ -495,7 +505,7 @@ def _write_verdict(out_dir: Path, verdict: str, exit_code, stderr_tail: str,
 @app.function(image=harness_image, volumes={"/runs": runs_vol},
               timeout=120 * MINUTES, max_containers=24, secrets=[ENDPOINT_KEYS])
 def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
-              run_id: str, worker: dict) -> dict:
+              run_id: str, worker: dict, attempts: int = 1) -> dict:
     """One task x one trial, inside the task's pinned container.
 
     Invariants this function owns (not the model, not the skill):
@@ -547,6 +557,11 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             "transcript_path": str(transcript_path.relative_to("/runs")),
             "timed_out": timed_out,
             "num_turns": usage.get("num_turns", 0),
+            # P8 wrapper telemetry: how many sessions actually ran and why the
+            # loop stopped. At attempts=1 these are (0 or 1, "single_attempt");
+            # they never alter the existing fields, so attempts=1 is unchanged.
+            "n_attempts": n_attempts_run,
+            "stop_reason": stop_reason,
         }
         if error:
             res["error"] = error
@@ -574,12 +589,95 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
     base_sha = ""
     worker_diff = None
     usage = {}
+    # acc folds usage across ALL sessions this trial runs (cost honesty: the
+    # wrapper multiplies inference). gpu_seconds is derived once from the summed
+    # tokens_out in _result, so it is not summed here.
+    acc = {"tokens_in": 0, "tokens_out": 0, "num_turns": 0, "api_usd": 0.0}
     timed_out = False
+    n_attempts_run = 0
+    # Default for pre-session invalids and the attempts=1 no-op path; the loop
+    # overwrites it with a real reason once >1 session runs.
+    stop_reason = "single_attempt" if attempts == 1 else "attempts_exhausted"
 
-    # --- Phase A: worker (with one full-phase retry on a missing result line) ---
-    for phase_attempt in range(2):
-        sb = None
+    def _run_claude_session(sb, prompt, tpath):
+        """Stream ONE `claude -p` session inside the ALREADY-created sandbox
+        `sb`, writing stream-json to `tpath`. Returns (usage, sess_timed_out,
+        lines). The workspace in `sb` PERSISTS after return — the caller owns
+        `sb` and its termination; sequential calls on one `sb` are exactly the
+        inference-time persistence channel P8 reconstructs (nothing is reset
+        between sessions). The timeout stays timeout_s PER SESSION."""
+        lines: list[str] = []
+        buf = ""
+        # modal 1.5.1: an exec deadline ends stdout iteration SILENTLY (no
+        # exception) and makes wait() return -1. Detect timeout from that, not
+        # from a (never-raised) ExecTimeoutError. Keep a UnicodeDecodeError guard
+        # as cheap insurance against odd bytes in the text stream.
+        exec_start = time.time()
+        # Run claude under bash with stdin from /dev/null: an open non-TTY stdin
+        # makes `claude -p` block forever before any output. The prompt goes
+        # through an env var (WORKER_PROMPT), never the shell command string, so
+        # arbitrary issue text can't break quoting. `exec` replaces bash so
+        # signals/exit flow straight to the CLI.
+        proc = sb.exec(
+            "bash", "-lc",
+            'exec claude -p "$WORKER_PROMPT" --output-format stream-json '
+            "--verbose --dangerously-skip-permissions --max-turns 150 "
+            "< /dev/null",
+            env={**exec_env, "WORKER_PROMPT": prompt},
+            timeout=timeout_s, workdir="/testbed")
+        with open(tpath, "w") as tfp:
+            try:
+                for chunk in proc.stdout:
+                    buf += chunk
+                    while "\n" in buf:
+                        ln, buf = buf.split("\n", 1)
+                        tfp.write(ln + "\n")
+                        lines.append(ln)
+            except UnicodeDecodeError:  # odd bytes in transcript -> stream end
+                pass
+            finally:
+                if buf:
+                    tfp.write(buf + "\n")
+                    lines.append(buf)
+        rc = proc.wait()
+        elapsed = time.time() - exec_start
+        sess_timed_out = (rc == -1 and elapsed >= timeout_s - 2)
+        # Capture worker stderr (bounded); the LAST session to run keeps the
+        # file (same path/purpose as the single-shot path) for post-hoc
+        # diagnosis of invalid trials.
         try:
+            (out_dir / "worker.stderr.log").write_text(
+                (proc.stderr.read() or "")[-4000:])
+        except Exception:
+            pass
+        return tl.parse_stream_json(lines), sess_timed_out, lines
+
+    def _stop_after(sess_usage, sess_timed_out, lines):
+        """Loop control after a session (attempts>1 only). Returns
+        (stop, reason): stop on the worker's OWN last VERIFY run passing
+        (reason 'self_verify_pass', the B-validated oracle-blind signal) or on a
+        timeout (reason None; the timed_out field already records it). A dead /
+        self-errored session is a failed attempt -> keep going if attempts
+        remain, else fall through to Phase B."""
+        if sess_timed_out:
+            return True, None
+        if not sess_usage.get("found_result") or sess_usage.get("is_error"):
+            return False, None
+        import selection_analysis as sa  # in-container via add_local_python_source
+        wv = sa.detect_worker_verify(lines, task_spec.get("verify") or "")
+        if tl.should_stop_attempts(wv["state"]):
+            return True, "self_verify_pass"
+        return False, None
+
+    # --- Phase A: up to `attempts` sequential sessions in ONE sandbox ---------
+    sb = None
+    try:
+        # Attempt 1: fresh sandbox + scaffold, with the historic single
+        # recreate-retry on an abnormal (no-result, non-timeout) worker death.
+        # That retry RECREATES the sandbox — legitimate ONLY here, before any
+        # carried workspace exists. Attempts >=2 reuse this sandbox and NEVER
+        # recreate (workspace persistence is the whole point of P8).
+        for phase_attempt in range(2):
             try:
                 sb = _create_sandbox(app_handle, image=worker_img,
                                      timeout=timeout_s + 600, workdir="/testbed",
@@ -597,7 +695,7 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             base_sha = sha_proc.stdout.read().strip()
             if sha_proc.wait() != 0 or not base_sha:
                 return _result(tl.classify("base_sha_unresolved"),
-                               "base_sha_unresolved", usage=usage,
+                               "base_sha_unresolved", usage=acc,
                                error="git rev-parse HEAD failed or empty")
 
             _sb_write(sb, "/tmp/cfg.tgz", variant_config_tar)
@@ -607,102 +705,92 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
                           "cp -a /tmp/cfgx/claude-config/. /testbed/.claude/").wait()
             if mrc != 0:
                 return _result(tl.classify("scaffold_materialize_failed"),
-                               "scaffold_materialize_failed", usage=usage,
+                               "scaffold_materialize_failed", usage=acc,
                                error=f"scaffold materialize exit {mrc}")
             _sb_write(sb, "/testbed/VERIFY.txt", task_spec["verify"])
             _sb_write(sb, "/testbed/TASK.md", description)
 
-            lines: list[str] = []
-            buf = ""
-            # modal 1.5.1: an exec deadline ends stdout iteration SILENTLY (no
-            # exception) and makes wait() return -1. Detect timeout from that,
-            # not from a (never-raised) ExecTimeoutError. Keep a UnicodeDecodeError
-            # guard as cheap insurance against odd bytes in the text stream.
-            exec_start = time.time()
-            # Run claude under bash with stdin from /dev/null: an open non-TTY
-            # stdin makes `claude -p` block forever before any output. The prompt
-            # goes through an env var (WORKER_PROMPT), never the shell command
-            # string, so the arbitrary issue text can't break quoting. `exec`
-            # replaces bash so signals/exit flow straight to the CLI.
-            proc = sb.exec(
-                "bash", "-lc",
-                'exec claude -p "$WORKER_PROMPT" --output-format stream-json '
-                "--verbose --dangerously-skip-permissions --max-turns 150 "
-                "< /dev/null",
-                env={**exec_env, "WORKER_PROMPT": description},
-                timeout=timeout_s, workdir="/testbed")
-            with open(transcript_path, "w") as tfp:
-                try:
-                    for chunk in proc.stdout:
-                        buf += chunk
-                        while "\n" in buf:
-                            ln, buf = buf.split("\n", 1)
-                            tfp.write(ln + "\n")
-                            lines.append(ln)
-                except UnicodeDecodeError:  # odd bytes in transcript -> stream end
-                    pass
-                finally:
-                    if buf:
-                        tfp.write(buf + "\n")
-                        lines.append(buf)
+            usage, timed_out, lines = _run_claude_session(
+                sb, tl.build_attempt_prompt(description, 1, attempts),
+                transcript_path)
+            n_attempts_run = 1
+            tl.accumulate_usage(acc, usage)
 
-            rc = proc.wait()
-            elapsed = time.time() - exec_start
-            timed_out = (rc == -1 and elapsed >= timeout_s - 2)
+            # No terminating result line and not a timeout => the CLI died
+            # abnormally; recreate a FRESH sandbox once and retry the first
+            # session (nothing carried is lost — no workspace exists yet).
+            if not usage["found_result"] and not timed_out:
+                if phase_attempt == 0:
+                    try:
+                        sb.terminate()
+                    except Exception:
+                        pass
+                    sb = None
+                    acc = {"tokens_in": 0, "tokens_out": 0,
+                           "num_turns": 0, "api_usd": 0.0}
+                    n_attempts_run = 0
+                    continue
+                # Retry exhausted. attempts=1: historic terminal invalid.
+                # attempts>1: one failed attempt — fall through so sessions 2..n
+                # still run (the recreated sandbox is fresh).
+                if attempts == 1:
+                    return _result(
+                        tl.classify("worker_no_result_line", "exhausted"),
+                        "worker_no_result_line", usage=acc, timed_out=timed_out,
+                        error="worker produced no result line")
 
-            # Capture worker stderr (bounded) — the CLI puts crashes/setup
-            # errors here, invisible in the stdout transcript; keep it for
-            # post-hoc diagnosis of invalid trials.
+            # Ran to completion but the CLI self-reported an error (max turns,
+            # API error, ...). attempts=1: historic terminal invalid. attempts>1:
+            # a failed attempt (handled by _stop_after), never a hard return.
+            if usage["found_result"] and usage["is_error"] and attempts == 1:
+                return _result(tl.classify("worker_reported_error"),
+                               "worker_reported_error", usage=acc,
+                               timed_out=timed_out, error=usage["subtype"])
+            break
+
+        # Sessions 2..attempts reuse the SAME sandbox (workspace persists). Stop
+        # early on a worker self-VERIFY pass or a timeout; else run them all.
+        if attempts > 1:
+            stop, reason = _stop_after(usage, timed_out, lines)
+            stop_reason = reason or "attempts_exhausted"
+            if not stop:
+                for k in range(2, attempts + 1):
+                    tpath = out_dir / f"transcript.attempt{k}.jsonl"
+                    usage, timed_out, lines = _run_claude_session(
+                        sb, tl.build_attempt_prompt(description, k, attempts),
+                        tpath)
+                    n_attempts_run = k
+                    tl.accumulate_usage(acc, usage)
+                    stop, reason = _stop_after(usage, timed_out, lines)
+                    stop_reason = reason or "attempts_exhausted"
+                    if stop:
+                        break
+
+        # Capture the worker's change on the FINAL workspace, excluding harness
+        # scaffolding. Runs ONCE, after the loop — Phase B verdicts this state.
+        arc = sb.exec("git", "add", "-A", "--",
+                      ":(exclude).claude", ":(exclude)VERIFY.txt",
+                      ":(exclude)TASK.md", workdir="/testbed").wait()
+        if arc != 0:
+            return _result(tl.classify("worker_diff_stage_failed"),
+                           "worker_diff_stage_failed", usage=acc,
+                           timed_out=timed_out, error=f"git add exit {arc}")
+        # Binary-safe: text-mode streams decode UTF-8 strict and would raise on
+        # a binary diff hunk. Read bytes; _sb_write/write_bytes handle them.
+        dproc = sb.exec("git", "diff", "--binary", "--cached", base_sha,
+                        workdir="/testbed", text=False)
+        worker_diff = dproc.stdout.read()
+        dproc.wait()
+        (out_dir / "worker.diff").write_bytes(worker_diff)
+    finally:
+        if sb is not None:
             try:
-                (out_dir / "worker.stderr.log").write_text(
-                    (proc.stderr.read() or "")[-4000:])
+                sb.terminate()
             except Exception:
                 pass
 
-            usage = tl.parse_stream_json(lines)
-
-            # No terminating result line and not a timeout => the CLI died
-            # abnormally; retry the whole worker phase once, then invalid.
-            if not usage["found_result"] and not timed_out:
-                if phase_attempt == 0:
-                    continue
-                return _result(
-                    tl.classify("worker_no_result_line", "exhausted"),
-                    "worker_no_result_line", usage=usage, timed_out=timed_out,
-                    error="worker produced no result line")
-
-            # Ran to completion but the CLI self-reported an error (max turns, API
-            # error, ...): invalid — never fall through to empty_diff/fail.
-            if usage["found_result"] and usage["is_error"]:
-                return _result(tl.classify("worker_reported_error"),
-                               "worker_reported_error", usage=usage,
-                               timed_out=timed_out, error=usage["subtype"])
-
-            # Capture the worker's change, excluding harness scaffolding.
-            arc = sb.exec("git", "add", "-A", "--",
-                          ":(exclude).claude", ":(exclude)VERIFY.txt",
-                          ":(exclude)TASK.md", workdir="/testbed").wait()
-            if arc != 0:
-                return _result(tl.classify("worker_diff_stage_failed"),
-                               "worker_diff_stage_failed", usage=usage,
-                               timed_out=timed_out, error=f"git add exit {arc}")
-            # Binary-safe: text-mode streams decode UTF-8 strict and would raise
-            # on a binary diff hunk. Read bytes; _sb_write/write_bytes handle them.
-            dproc = sb.exec("git", "diff", "--binary", "--cached", base_sha,
-                            workdir="/testbed", text=False)
-            worker_diff = dproc.stdout.read()
-            dproc.wait()
-            (out_dir / "worker.diff").write_bytes(worker_diff)
-            break
-        finally:
-            if sb is not None:
-                try:
-                    sb.terminate()
-                except Exception:
-                    pass
-
     if not worker_diff or not worker_diff.strip():
-        return _result(tl.classify("empty_diff"), "empty_diff", usage=usage,
+        return _result(tl.classify("empty_diff"), "empty_diff", usage=acc,
                        timed_out=timed_out)
 
     # --- Phase B: verdict, in a fresh raw container with the network blocked ---
@@ -714,7 +802,7 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
         except Exception as e:
             return _result(tl.classify("verdict_sandbox_create_failed"),
                            "verdict_sandbox_create_failed",
-                           usage=usage, timed_out=timed_out,
+                           usage=acc, timed_out=timed_out,
                            error=f"verdict sandbox create failed: {e}")
 
         _sb_write(vsb, "/tmp/worker.diff", worker_diff)
@@ -725,7 +813,7 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
         if rc != 0:
             v = tl.classify("worker_diff_apply_failed")
             _write_verdict(out_dir, v, rc, "", base_sha, "worker_diff_apply_failed")
-            return _result(v, "worker_diff_apply_failed", usage=usage,
+            return _result(v, "worker_diff_apply_failed", usage=acc,
                            timed_out=timed_out)
 
         # Reset the files the hidden tests touch back to base BEFORE applying
@@ -742,7 +830,7 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
         if rc != 0:
             v = tl.classify("hidden_tests_apply_failed")
             _write_verdict(out_dir, v, rc, "", base_sha, "hidden_tests_apply_failed")
-            return _result(v, "hidden_tests_apply_failed", usage=usage,
+            return _result(v, "hidden_tests_apply_failed", usage=acc,
                            timed_out=timed_out)
 
         # modal 1.5.1: a verify exec deadline makes wait() return -1 silently
@@ -762,7 +850,7 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             reason = "verify_exit_nonzero"
         verdict = tl.classify(reason)
         _write_verdict(out_dir, verdict, exit_code, err_tail, base_sha, reason)
-        return _result(verdict, reason, usage=usage, timed_out=timed_out)
+        return _result(verdict, reason, usage=acc, timed_out=timed_out)
     finally:
         if vsb is not None:
             try:
@@ -863,7 +951,8 @@ def _probe_proxy(url: str) -> None:
 
 @app.local_entrypoint()
 def run_sweep(variant: str, trials: int = 5, split: str = "dev",
-              worker_model: str = "ornith-35b", tasks: str = ""):
+              worker_model: str = "ornith-35b", tasks: str = "",
+              attempts: int = 1):
     """Fan a variant out across the task set; write runs/<run_id>/ and append
     the cost ledger. Holdout runs require the operator's .holdout-unlocked
     flow upstream — this entrypoint refuses split='holdout' unless the flag
@@ -872,7 +961,10 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
     worker_model selects the served model: 'ornith-35b' (the base) or
     'ornith-lora' (the P4 adapter); both run on the in-app vLLM+proxy stack,
     GPU-budget-gated. Hosted reference workers were removed 2026-07-09.
-    tasks: optional comma-separated task-id filter (partial run)."""
+    tasks: optional comma-separated task-id filter (partial run).
+    attempts: P8 native-loop wrapper — up to N sequential Claude Code sessions
+    per trial in ONE persistent sandbox, early-stopping on the worker's own
+    VERIFY pass (default 1 = today's single-shot; P8 uses 3)."""
     import sys
     import time as _time
     root = Path(__file__).resolve().parent.parent
@@ -883,6 +975,8 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
         raise SystemExit("holdout sealed: operator must create .holdout-unlocked")
     if trials < 3:
         raise SystemExit("trials < 3: paired stats need >=3 (PLAN decision rules)")
+    if not 1 <= attempts <= 5:
+        raise SystemExit("attempts must be in [1, 5] (P8 uses 3)")
 
     variant_dir = root / "experiments" / "variants" / variant
     manifest = variant_dir / "manifest.yaml"
@@ -923,7 +1017,7 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
 
     print(f"[sweep] {run_id}: {len(specs)} tasks x {trials} trials "
           f"({len(specs) * trials} trials), variant {variant} (parent {parent}) "
-          f"worker {worker_model}")
+          f"worker {worker_model} attempts {attempts}")
 
     if is_ornith:
         _wait_healthy(_serve_url())
@@ -932,7 +1026,8 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
         except Exception as e:  # best-effort; the per-trial calls will surface it
             print(f"[sweep] proxy health probe failed (continuing): {e}")
 
-    work = [(spec, cfg_tar, t, run_id, worker) for spec in specs for t in range(trials)]
+    work = [(spec, cfg_tar, t, run_id, worker, attempts)
+            for spec in specs for t in range(trials)]
     prov = {s["id"]: s.get("provenance") for s in specs}
 
     sweep_start = _time.time()
@@ -940,14 +1035,15 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
     # return_exceptions: a single trial raising (wrapped user-code exception)
     # must not sink the whole sweep — synthesize an invalid result for it.
     # order_outputs defaults True, so zip(work, results) stays aligned.
-    for (spec, _cfg, t, _rid, _w), r in zip(
+    for (spec, _cfg, t, _rid, _w, _a), r in zip(
             work, run_trial.starmap(work, return_exceptions=True)):
         if isinstance(r, Exception):
             r = {"task": spec["id"], "trial": t, "verdict": "invalid",
                  "reason": "trial_exception", "error": str(r)[:300],
                  "tokens_in": 0, "tokens_out": 0, "gpu_seconds": 0.0,
                  "api_usd": 0.0, "wall_clock_s": 0.0, "timed_out": False,
-                 "num_turns": 0, "transcript_path": ""}
+                 "num_turns": 0, "transcript_path": "",
+                 "n_attempts": 0, "stop_reason": "trial_exception"}
         r["provenance"] = prov.get(r.get("task"))
         results.append(r)
     sweep_wall_s = _time.time() - sweep_start
@@ -987,12 +1083,17 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
 
 @app.local_entrypoint()
 def run_one(task_id: str, variant: str = "v001-baseline",
-            worker_model: str = "ornith-35b"):
+            worker_model: str = "ornith-35b", attempts: int = 1):
     """One task x one trial, for exercising the runner end-to-end (the
     proof-of-one). Writes NOTHING to experiments/runs/ or the ledger — the trial
     still writes its own transcript/diff/verdict to the /runs volume — and prints
-    the result dict as JSON. Refuses to reach into sealed holdout."""
+    the result dict as JSON. Refuses to reach into sealed holdout.
+
+    attempts: P8 native-loop wrapper — up to N sequential sessions in one
+    persistent sandbox (default 1 = single-shot)."""
     root = Path(__file__).resolve().parent.parent
+    if not 1 <= attempts <= 5:
+        raise SystemExit("attempts must be in [1, 5] (P8 uses 3)")
     variant_dir = root / "experiments" / "variants" / variant
     if not (variant_dir / "manifest.yaml").exists():
         raise SystemExit(f"no such variant: {variant}")
@@ -1013,5 +1114,6 @@ def run_one(task_id: str, variant: str = "v001-baseline",
     if worker_model in ("ornith-35b", "ornith-lora"):
         _wait_healthy(_serve_url())
     ts = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
-    result = run_trial.remote(spec, cfg_tar, 0, f"one-{ts}-{task_id}", worker)
+    result = run_trial.remote(spec, cfg_tar, 0, f"one-{ts}-{task_id}", worker,
+                              attempts)
     print(json.dumps(result, indent=2))

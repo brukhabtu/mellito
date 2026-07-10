@@ -196,6 +196,63 @@ def worker_env(worker: dict, extra: dict | None = None) -> dict:
     return env
 
 
+# --- P8 native-loop wrapper: per-session decision logic -------------------
+#
+# run_trial can run up to `attempts` sequential Claude Code sessions in ONE
+# persistent sandbox — the model's own edits and scratch scripts carry across
+# as the model-authored scaffold (the persistence channel P8 reconstructs at
+# inference). These pure helpers own the per-session DECISIONS (the prompt each
+# session sees, when to stop, how to fold usage), so they are unit-testable
+# without a container. The SEQUENCING (sandbox lifetime, when to diff) stays in
+# run_trial. At attempts=1 build_attempt_prompt returns the description verbatim
+# and no stop/accumulate logic runs — the default path is a true no-op.
+
+_ATTEMPT_PREAMBLE = (
+    "[Attempt {k} of {n}] You have worked on this task before in this same "
+    "workspace. Your previous edits and scratch files are still present — "
+    "review where you left off (e.g. `git diff`, your own scripts, any notes) "
+    "before continuing. If your fix already passes the VERIFY.txt command, "
+    "confirm it and finish."
+)
+
+
+def build_attempt_prompt(description: str, k: int, n: int) -> str:
+    """Worker prompt (env WORKER_PROMPT) for session k of n.
+
+    Attempt 1 is the bare task description, BYTE-IDENTICAL to the single-shot
+    path — the default attempts=1 loop must be a true no-op. Sessions k>1 get a
+    persistence-reminder preamble prepended (the A0-validated passive-context
+    channel), then the original description, so the model reviews the workspace
+    it already built before continuing.
+    """
+    if k <= 1:
+        return description
+    return _ATTEMPT_PREAMBLE.format(k=k, n=n) + "\n\n" + description
+
+
+def should_stop_attempts(verify_state: str) -> bool:
+    """Stop the attempts loop iff the worker's OWN last VERIFY run in the
+    just-finished session passed — selection_analysis' RAN_PASS state, the
+    B-validated (0.72), oracle-blind self-verification signal. RAN_FAIL and
+    NEVER_RAN both mean 'keep going if attempts remain'.
+    """
+    return verify_state == "RAN_PASS"
+
+
+def accumulate_usage(acc: dict, usage: dict) -> dict:
+    """Fold one session's parsed usage into `acc` (mutated and returned) so a
+    trial's tokens/turns/cost reflect ALL sessions it ran, not just the last —
+    cost honesty for the wrapper, which multiplies inference. gpu_seconds is a
+    pure function of the summed tokens_out and is derived once downstream (in
+    run_trial._result), so summing it here would be redundant.
+    """
+    for key in ("tokens_in", "tokens_out", "num_turns"):
+        acc[key] = int(acc.get(key, 0)) + int(usage.get(key, 0) or 0)
+    acc["api_usd"] = (float(acc.get("api_usd", 0.0))
+                      + float(usage.get("api_usd", 0.0) or 0.0))
+    return acc
+
+
 def node_claude_install_cmds() -> list[str]:
     """`run_commands` to layer Node 22 + the pinned Claude Code CLI onto a task
     image. Task images are Ubuntu 22.04 running as root with no Node; curl/ca
