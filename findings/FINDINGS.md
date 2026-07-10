@@ -1611,3 +1611,41 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   quantified. (c) smarter selection layer — B2 showed the selector noise is
   structural (base-vs-hidden test gap); low expected value. Budget:
   ~$32 ledgered + ~$14 unledgered training ≈ $46 of $150.
+
+## 2026-07-10 · P8 · PRE-REGISTRATION (native-loop wrapper — the final experiment)
+- Committed before implementation (integrity guard). Hypothesis: Ornith was
+  trained two-stage — refine a persistent per-task scaffold, then solve
+  conditioned on it — and every evaluation to date gave it one blank-slate
+  session. The wrapper reconstructs the persistence channel at INFERENCE,
+  inside Claude Code, using only validated mechanisms: sequential sessions in
+  ONE sandbox (its own scripts/edits persist — the model-authored scaffold),
+  an attempt preamble as passive context (the A0-validated channel), and the
+  model's own verification as the stop/retry trigger (the B-validated 0.72
+  signal, oracle-blind). No new tools, no new behaviors requested.
+- **Design:** run_trial gains `attempts` (default 1 = today; P8 runs 3).
+  Loop: session → parse ITS transcript for a worker-VERIFY run that passed
+  (selection_analysis detector, B2-audited) → if RAN_PASS, stop; else next
+  session in the SAME sandbox with a preamble ("attempt N of 3; your previous
+  work is in this workspace; review it — e.g. git diff, your scripts — before
+  continuing; if your fix verifies, finish"). Oracle verdict computed ONCE on
+  the final workspace (Phase B unchanged, hidden tests still sealed).
+  gpu_seconds/turns accumulate across attempts (cost honesty); n_attempts
+  recorded per trial.
+- **Arms & gate (pre-committed):** wrapped run = v001-baseline scaffold,
+  worker ornith-lora (adapter pref-20260710T120439, already deployed), 40×5,
+  attempts=3. **GATE: paired net ≥ +5 vs the STOCK single-shot base arm
+  (run 20260707T215242-v001-baseline)** — the end-to-end system-vs-stock
+  comparison the north-star is stated in. Also reported (not gated): paired
+  vs tuned single-shot (run 20260710T124151, isolates the wrapper's marginal
+  contribution), attempt-count distribution, $/solved (wrapper multiplies
+  inference; early-stop expected to hold ~1.6-2.0 attempts/trial mean).
+- **PASS → operator stages ≥15 holdout specs; single unlocked holdout run
+  confirms (dev/holdout gap ≤5); G4 closes positive.
+  FAIL (< +5) → THE NEGATIVE-RESULT WRITE-UP BEGINS. Pre-committed: P8 is the
+  last experiment — every axis (prompting ×5, imitation, preference ×2,
+  selection, geometry-at-inference) will then have been tested; no further
+  rungs without new outside evidence. No re-litigation.**
+- Known risks accepted: self-verify false negatives may trigger retries that
+  disturb an already-correct workspace (preamble mitigates; measured in the
+  isolation pairing); false positives stop early (no worse than today).
+  Budget: ~$46 spent; P8 ceiling ~$8 (proof-of-one ~$0.5 + sweep ~$4-7).
