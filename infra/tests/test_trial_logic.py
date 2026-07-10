@@ -196,3 +196,242 @@ def test_node_claude_install_cmds_pins_version():
     assert any("setup_22.x" in c for c in cmds)
     assert any(f"@anthropic-ai/claude-code@{tl.CLAUDE_CODE_VERSION}" in c for c in cmds)
     assert tl.CLAUDE_CODE_VERSION == "2.0.14"
+
+
+# --- detect_native_verify (P9-F native + attempts self-VERIFY detection) ---
+#
+# Synthetic native_driver transcripts: assistant rows carry OpenAI `tool_calls`
+# (function.name=="bash", arguments a JSON string with "command"); role:"tool"
+# reply rows carry the command output ALWAYS ending in "[exit code: N]" (or a
+# timeout marker); a terminal native_result row closes the run. The detector is
+# the native analogue of selection_analysis.detect_worker_verify and feeds the
+# SAME should_stop_attempts.
+
+NATIVE_VERIFY = ("source /opt/miniconda3/bin/activate testbed && cd /testbed && "
+                 "pytest -rA astropy/modeling/tests/test_separable.py")
+
+
+def _n_tc(command, call_id="c1", name="bash", raw_args=None):
+    """One OpenAI-shape bash tool_call (arguments as the JSON-string wire form)."""
+    args = raw_args if raw_args is not None else json.dumps({"command": command})
+    return {"id": call_id, "type": "function",
+            "function": {"name": name, "arguments": args}}
+
+
+def _n_asst(*tool_calls, content=""):
+    row = {"role": "assistant", "content": content}
+    if tool_calls:
+        row["tool_calls"] = list(tool_calls)
+    return json.dumps(row)
+
+
+def _n_tool(content, call_id="c1"):
+    return json.dumps({"role": "tool", "tool_call_id": call_id, "content": content})
+
+
+def _n_result(ended="done", turns=1):
+    return json.dumps({"type": "native_result", "turns": turns, "ended": ended,
+                       "usage_total": {"tokens_in": 1, "tokens_out": 1}})
+
+
+def _n_exit(code):
+    """A tool reply body ending in native_driver's trailing exit-code marker."""
+    return f"...ran the tests...\n[exit code: {code}]"
+
+
+def _state(rows, verify=NATIVE_VERIFY):
+    return tl.detect_native_verify("\n".join(rows), verify)["state"]
+
+
+def test_native_verify_pass_substring_exit0():
+    # (a) the whole verify command appears in the run command; reply exits 0.
+    rows = [
+        json.dumps({"role": "system", "content": "s"}),
+        json.dumps({"role": "user", "content": "Begin."}),
+        _n_asst(_n_tc(NATIVE_VERIFY, "t1")),
+        _n_tool(_n_exit(0), "t1"),
+        _n_result("done"),
+    ]
+    assert _state(rows) == "RAN_PASS"
+    assert tl.should_stop_attempts(_state(rows)) is True   # loop would stop
+
+
+def test_native_verify_fail_exit_nonzero():
+    rows = [
+        _n_asst(_n_tc(NATIVE_VERIFY, "t1")),
+        _n_tool(_n_exit(1), "t1"),
+        _n_result("done"),
+    ]
+    assert _state(rows) == "RAN_FAIL"
+    assert tl.should_stop_attempts(_state(rows)) is False   # loop would continue
+
+
+def test_native_verify_never_ran():
+    rows = [
+        _n_asst(_n_tc("ls /testbed", "t1")),
+        _n_tool(_n_exit(0), "t1"),
+        _n_asst(_n_tc("git status", "t2")),
+        _n_tool(_n_exit(0), "t2"),
+        _n_result("done"),
+    ]
+    assert _state(rows) == "NEVER_RAN"
+
+
+def test_native_verify_cat_only_read_does_not_qualify():
+    # A command that merely READS VERIFY.txt (exit 0) must NOT read as RAN_PASS —
+    # the deliberately-stricter-than-CC edge from the P9-F pre-registration.
+    for read_cmd in ("cat VERIFY.txt", "cat /testbed/VERIFY.txt",
+                     "head -50 /testbed/VERIFY.txt", "less VERIFY.txt",
+                     "grep pytest /testbed/VERIFY.txt"):
+        rows = [
+            _n_asst(_n_tc(read_cmd, "t1")),
+            _n_tool(_n_exit(0), "t1"),   # cat exits 0 — would be RAN_PASS if it qualified
+            _n_result("done"),
+        ]
+        assert _state(rows) == "NEVER_RAN", read_cmd
+
+
+def test_native_verify_txt_execution_patterns_qualify():
+    # (b) running VERIFY.txt (not reading it) qualifies. verify_cmd="" isolates
+    # this path from the substring path (a).
+    for exec_cmd in ("bash /testbed/VERIFY.txt", "sh VERIFY.txt",
+                     "source /testbed/VERIFY.txt", ". /testbed/VERIFY.txt",
+                     'eval "$(cat /testbed/VERIFY.txt)"',
+                     'bash -c "$(cat /testbed/VERIFY.txt)"'):
+        rows = [
+            _n_asst(_n_tc(exec_cmd, "t1")),
+            _n_tool(_n_exit(0), "t1"),
+            _n_result("done"),
+        ]
+        assert tl.detect_native_verify("\n".join(rows), "")["state"] == "RAN_PASS", exec_cmd
+    # Empty verify_cmd must NOT blanket-match a plain command.
+    rows = [_n_asst(_n_tc("ls", "t1")), _n_tool(_n_exit(0), "t1"), _n_result("done")]
+    assert tl.detect_native_verify("\n".join(rows), "")["state"] == "NEVER_RAN"
+
+
+def test_native_verify_last_invocation_wins():
+    fail_then_pass = [
+        _n_asst(_n_tc(NATIVE_VERIFY, "t1")),
+        _n_tool(_n_exit(1), "t1"),
+        _n_asst(_n_tc(NATIVE_VERIFY, "t2")),
+        _n_tool(_n_exit(0), "t2"),
+        _n_result("done"),
+    ]
+    assert _state(fail_then_pass) == "RAN_PASS"
+    pass_then_fail = [
+        _n_asst(_n_tc(NATIVE_VERIFY, "t1")),
+        _n_tool(_n_exit(0), "t1"),
+        _n_asst(_n_tc(NATIVE_VERIFY, "t2")),
+        _n_tool(_n_exit(1), "t2"),
+        _n_result("done"),
+    ]
+    assert _state(pass_then_fail) == "RAN_FAIL"
+
+
+def test_native_verify_timeout_marker_is_fail():
+    rows = [
+        _n_asst(_n_tc(NATIVE_VERIFY, "t1")),
+        _n_tool("partial output before it hung\n[command timed out after 120s]", "t1"),
+        _n_result("done"),
+    ]
+    assert _state(rows) == "RAN_FAIL"
+
+
+def test_native_verify_missing_tool_row_is_fail():
+    # Ran VERIFY but the driver died before writing the tool reply (next row is
+    # the native_result) -> no exit-0 signal -> fail.
+    rows = [_n_asst(_n_tc(NATIVE_VERIFY, "t1")), _n_result("error")]
+    assert _state(rows) == "RAN_FAIL"
+    # Also: the next row is another assistant, so the VERIFY call has no reply.
+    rows2 = [
+        _n_asst(_n_tc(NATIVE_VERIFY, "t1")),
+        _n_asst(_n_tc("echo done", "t2")),
+        _n_tool(_n_exit(0), "t2"),
+        _n_result("done"),
+    ]
+    assert _state(rows2) == "RAN_FAIL"
+
+
+def test_native_verify_only_first_tool_call_considered():
+    # native_driver executes ONLY tool_calls[0]; the detector must match that.
+    first_is_verify = [
+        _n_asst(_n_tc(NATIVE_VERIFY, "t1"), _n_tc("echo hi", "t2")),
+        _n_tool(_n_exit(0), "t1"),   # reply is the first call's output
+        _n_result("done"),
+    ]
+    assert _state(first_is_verify) == "RAN_PASS"
+    # A verify command that is only the SECOND call is never executed -> ignored.
+    second_is_verify = [
+        _n_asst(_n_tc("echo hi", "t1"), _n_tc(NATIVE_VERIFY, "t2")),
+        _n_tool(_n_exit(0), "t1"),
+        _n_result("done"),
+    ]
+    assert _state(second_is_verify) == "NEVER_RAN"
+
+
+def test_native_verify_malformed_arguments_tolerated():
+    # A tool_call with non-JSON arguments is skipped, never raised; a later
+    # well-formed VERIFY run still classifies.
+    rows = [
+        _n_asst(_n_tc("", "t1", raw_args="{not valid json")),
+        _n_tool(_n_exit(0), "t1"),
+        _n_asst(_n_tc(NATIVE_VERIFY, "t2")),
+        _n_tool(_n_exit(0), "t2"),
+        _n_result("done"),
+    ]
+    assert _state(rows) == "RAN_PASS"
+    # If the only verify-looking call has malformed args, it can't qualify.
+    rows2 = [
+        _n_asst(_n_tc("", "t1", raw_args="{broken")),
+        _n_tool(_n_exit(0), "t1"),
+        _n_result("done"),
+    ]
+    assert _state(rows2) == "NEVER_RAN"
+
+
+def test_native_verify_non_bash_first_call_skipped():
+    # A non-bash first tool_call would get an error reply from the driver, never
+    # running VERIFY -> not a qualifying invocation.
+    rows = [
+        _n_asst(_n_tc("whatever", "t1", name="python")),
+        _n_tool(_n_exit(0), "t1"),
+        _n_result("done"),
+    ]
+    assert _state(rows) == "NEVER_RAN"
+
+
+def test_native_verify_tolerates_garbage_and_accepts_list_input():
+    rows = [
+        "not json at all",
+        "",
+        "{partial json",
+        _n_asst(_n_tc(NATIVE_VERIFY, "t1")),
+        _n_tool(_n_exit(0), "t1"),
+        _n_result("done"),
+    ]
+    # list-of-lines input and text input both work; garbage lines are skipped.
+    assert tl.detect_native_verify(rows, NATIVE_VERIFY)["state"] == "RAN_PASS"
+    assert _state(rows) == "RAN_PASS"
+
+
+def test_native_verify_multiline_command_normalized():
+    # A heredoc / multiline run command still matches the (collapsed) verify cmd.
+    multiline = ("source /opt/miniconda3/bin/activate testbed &&\n"
+                 "  cd /testbed &&\n"
+                 "  pytest -rA astropy/modeling/tests/test_separable.py")
+    rows = [
+        _n_asst(_n_tc(multiline, "t1")),
+        _n_tool(_n_exit(0), "t1"),
+        _n_result("done"),
+    ]
+    assert _state(rows) == "RAN_PASS"
+
+
+def test_native_verify_exit_code_10_is_fail_not_prefix_match():
+    # A trailing "[exit code: 10]" must NOT be read as a 0-exit (no false pass).
+    rows = [
+        _n_asst(_n_tc(NATIVE_VERIFY, "t1")),
+        _n_tool("boom\n[exit code: 10]", "t1"),
+        _n_result("done"),
+    ]
+    assert _state(rows) == "RAN_FAIL"

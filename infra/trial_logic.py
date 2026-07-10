@@ -9,6 +9,7 @@ is a table edit with a test, never a container round-trip.
 """
 
 import json
+import re
 
 # Pinned so the worker image is reproducible run-to-run (a version drift would
 # silently change the scaffold under test). Bump only in a `harness:` commit.
@@ -307,6 +308,139 @@ def parse_native_transcript(lines_or_text) -> dict:
         "found_result": False, "num_turns": 0, "ended": "",
         "tokens_in": int(tokens_in), "tokens_out": int(tokens_out),
     }
+
+
+# --- P9-F native + attempts wrapper: self-VERIFY detection ----------------
+#
+# The native wrapper (run_trial) runs up to `attempts` native_driver sessions in
+# ONE persistent sandbox and early-stops when the model's OWN last VERIFY run
+# passed — the same oracle-blind signal the Claude path reads via
+# selection_analysis.detect_worker_verify, but over the NATIVE transcript shape
+# (assistant rows carrying OpenAI `tool_calls`, and role:"tool" reply rows whose
+# content ALWAYS ends in "[exit code: N]"). This detector mirrors that
+# QUALIFICATION philosophy for the native format; its RAN_PASS/RAN_FAIL/NEVER_RAN
+# state feeds the SAME should_stop_attempts above.
+#
+# A qualifying VERIFY invocation is an assistant row's FIRST tool_call, when that
+# call is a `bash` call whose command EITHER contains the whole
+# (whitespace-collapsed) verify command OR actually EXECUTES /testbed/VERIFY.txt
+# — runs it via an interpreter / the source builtin / a command substitution, as
+# opposed to merely READING it with cat/head/less/grep. Only the FIRST tool_call
+# is considered, because native_driver executes only tool_calls[0] and the paired
+# role:"tool" reply is that call's output. Outcome = that reply's trailing
+# "[exit code: 0]" (pass) vs anything else, a timeout marker, or a missing reply
+# (fail). state is the LAST qualifying invocation's outcome; NEVER_RAN if none.
+
+# EXECUTION (not a read) of VERIFY.txt, applied to the whitespace-collapsed
+# command. A bare cat/head/less/grep on the file matches none of these; running
+# it through bash/sh/source, the `.` source builtin, or eval / bash -c of
+# "$(cat ...VERIFY.txt)" all match. Deliberately STRICTER than the CC detector's
+# generous cat-counts edge (per the P9-F pre-registration).
+_NATIVE_VERIFY_TXT_EXEC = (
+    re.compile(r"\b(?:bash|sh|source)\s+[^;|&]*VERIFY\.txt\b"),
+    re.compile(r"(?:^|[;|&]\s*|\s)\.\s+[^;|&]*VERIFY\.txt\b"),
+    re.compile(r"\$\(\s*cat\s+[^;|&)]*VERIFY\.txt\b"),
+)
+
+# Trailing exit-code marker native_driver appends to every tool reply (it is
+# appended BEFORE truncation and truncation keeps the tail, so it survives).
+# Exactly zero => pass; any other code, a timeout marker, or no marker => fail.
+_NATIVE_EXIT_OK = re.compile(r"\[exit code:\s*0\]\s*\Z")
+
+
+def _native_ws(s) -> str:
+    """Collapse every whitespace run to a single space, so a multiline / heredoc
+    command matches the verify command and the VERIFY.txt patterns uniformly."""
+    return " ".join((s or "").split())
+
+
+def _native_tool_command(tool_call):
+    """The bash `command` string of one OpenAI tool_call, or None if the call is
+    not a well-formed bash call (wrong tool name, malformed arguments JSON, or no
+    non-empty command). Malformed arguments are tolerated, never raised — mirrors
+    native_driver.extract_command's validity contract."""
+    fn = (tool_call or {}).get("function") or {}
+    if fn.get("name") != "bash":
+        return None
+    args = fn.get("arguments")
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(args, dict):
+        return None
+    cmd = args.get("command")
+    if not isinstance(cmd, str) or not cmd.strip():
+        return None
+    return cmd
+
+
+def _native_command_is_verify(command, norm_verify) -> bool:
+    """True iff `command` runs the verification: the whole (collapsed) verify
+    command appears in it, or it executes VERIFY.txt (not merely reads it)."""
+    norm_cmd = _native_ws(command)
+    if norm_verify and norm_verify in norm_cmd:
+        return True
+    return any(rx.search(norm_cmd) for rx in _NATIVE_VERIFY_TXT_EXEC)
+
+
+def _native_outcome_after(rows, i) -> str:
+    """RAN_PASS/RAN_FAIL from the FIRST role:"tool" row after assistant row `i`.
+    A missing reply (the next assistant row, the native_result row, or the end of
+    the transcript is reached first) is a fail — no positive exit-0 signal."""
+    for j in range(i + 1, len(rows)):
+        row = rows[j]
+        role = row.get("role")
+        if role == "tool":
+            content = row.get("content")
+            if isinstance(content, str) and _NATIVE_EXIT_OK.search(content):
+                return "RAN_PASS"
+            return "RAN_FAIL"
+        if role == "assistant" or row.get("type") == "native_result":
+            break  # no tool reply for this call -> missing -> fail
+    return "RAN_FAIL"
+
+
+def detect_native_verify(transcript_text, verify_cmd) -> dict:
+    """{"state": "RAN_PASS"|"RAN_FAIL"|"NEVER_RAN"} for one native_driver
+    transcript — the native analogue of selection_analysis.detect_worker_verify,
+    consumed by run_trial's attempts loop via should_stop_attempts. See the
+    section header for the exact qualification rule. `verify_cmd` may be empty
+    (only VERIFY.txt-execution commands then qualify)."""
+    if isinstance(transcript_text, str):
+        raw_lines = transcript_text.splitlines()
+    else:
+        raw_lines = transcript_text or []
+    rows = []
+    for line in raw_lines:
+        line = (line or "").strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(obj, dict):
+            rows.append(obj)
+
+    norm_verify = _native_ws(verify_cmd)
+    state = None
+    for i, row in enumerate(rows):
+        if row.get("role") != "assistant":
+            continue
+        tool_calls = row.get("tool_calls") or []
+        if not tool_calls:
+            continue
+        # Only the FIRST tool_call is ever executed by native_driver; the paired
+        # tool reply below is that call's output, so only it can qualify.
+        command = _native_tool_command(tool_calls[0])
+        if command is None:
+            continue
+        if not _native_command_is_verify(command, norm_verify):
+            continue
+        state = _native_outcome_after(rows, i)  # last qualifying invocation wins
+    return {"state": state or "NEVER_RAN"}
 
 
 def node_claude_install_cmds() -> list[str]:

@@ -570,6 +570,10 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
         }
         if error:
             res["error"] = error
+        # Additive: only present on the native attempts>1 path, where stop_reason
+        # carries the CC-parity vocabulary and can't also carry native_<ended>.
+        if native_ended:
+            res["native_ended"] = native_ended
         runs_vol.commit()
         return res
 
@@ -580,15 +584,14 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             raise RuntimeError(
                 f"variant config contains {m.name!r} — refusing (oracle leak guard)")
 
-    # P9-E native control worker: no Claude Code, no proxy — a self-contained
-    # text REPL driver talks OpenAI chat-completions direct to serve(). It is
-    # single-session by design (the control is one session), so attempts MUST be
-    # 1; the proxy key and Claude env are not built on this path.
+    # P9-E/F native worker: no Claude Code, no proxy — a self-contained text REPL
+    # driver talks OpenAI chat-completions direct to serve(). P9-F wraps it in the
+    # SAME attempts loop as the Claude path (up to `attempts` sequential driver
+    # sessions in one persistent sandbox); the proxy key and Claude env are still
+    # not built on this path.
     native = bool(worker.get("native"))
     exec_env = None
-    if native:
-        assert attempts == 1, "ornith-native is single-session by design (P9-E control)"
-    else:
+    if not native:
         # The worker authenticates to the in-app proxy with PROXY_MASTER_KEY
         # (from run_trial's own secret env); fill it into the worker before
         # building the exec env. (Hosted workers and their separate Anthropic-key
@@ -612,6 +615,11 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
     # Default for pre-session invalids and the attempts=1 no-op path; the loop
     # overwrites it with a real reason once >1 session runs.
     stop_reason = "single_attempt" if attempts == 1 else "attempts_exhausted"
+    # Native attempts>1 only: the final session's native_driver `ended` value
+    # (done/max_turns/timeout/error). At attempts==1 the native branch keeps that
+    # info in stop_reason as today ("native_<ended>"), so this stays "" and the
+    # additive result field is absent — byte-identical single-shot behavior.
+    native_ended = ""
 
     def _run_claude_session(sb, prompt, tpath):
         """Stream ONE `claude -p` session inside the ALREADY-created sandbox
@@ -687,12 +695,14 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
     sb = None
     try:
       if native:
-        # P9-E native control Phase A: ONE session, no variant scaffold, no
-        # Claude Code. Create the sandbox, resolve base_sha (Phase B diffs it),
-        # write VERIFY.txt + TASK.md (both excluded from the worker diff, same as
-        # the Claude path), upload the frozen driver to /native_driver.py (OUTSIDE
-        # /testbed, so it never enters the diff), and run it. The driver owns its
-        # own per-command timeout and session wall-clock (NATIVE_TIMEOUT_S).
+        # P9-E/F native Phase A: up to `attempts` sequential driver sessions in
+        # ONE sandbox (no variant scaffold, no Claude Code). Create the sandbox,
+        # resolve base_sha (Phase B diffs it), write VERIFY.txt + TASK.md (both
+        # excluded from the worker diff, same as the Claude path), and upload the
+        # frozen driver to /native_driver.py (OUTSIDE /testbed, so it never enters
+        # the diff) — all ONCE. Then run the driver up to `attempts` times in that
+        # same workspace, early-stopping on the model's OWN VERIFY pass. The driver
+        # owns its own per-command timeout and session wall-clock (NATIVE_TIMEOUT_S).
         try:
             sb = _create_sandbox(app_handle, image=worker_img,
                                  timeout=timeout_s + 600, workdir="/testbed",
@@ -712,47 +722,88 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
         _sb_write(sb, "/testbed/TASK.md", description)
         import native_driver as _nd  # in-container via add_local_python_source
         _sb_write(sb, "/native_driver.py", Path(_nd.__file__).read_text())
-        native_env = {
+        # Base driver env, shared across the per-attempt sessions in this ONE
+        # sandbox. NATIVE_TASK (set per attempt below) is preferred by the driver
+        # over NATIVE_TASK_FILE; the file stays pointed at the base TASK.md.
+        native_base_env = {
             "NATIVE_BASE_URL": worker["base_url"],
             "NATIVE_API_KEY": os.environ["VLLM_API_KEY"],
             "NATIVE_MODEL": worker.get("model") or "ornith-35b",
             "NATIVE_TIMEOUT_S": str(timeout_s),
-            "NATIVE_TRANSCRIPT": "/tmp/native_transcript.jsonl",
             "NATIVE_TASK_FILE": "/testbed/TASK.md",
         }
-        nproc = sb.exec("bash", "-lc",
-                        "exec python3 /native_driver.py < /dev/null",
-                        env=native_env, timeout=timeout_s + 300, workdir="/testbed")
-        driver_out = nproc.stdout.read()
-        nrc = nproc.wait()
-        try:
-            (out_dir / "native_driver.stdout.log").write_text((driver_out or "")[-8000:])
-            (out_dir / "native_driver.stderr.log").write_text(
-                (nproc.stderr.read() or "")[-4000:])
-        except Exception:
-            pass
-        # Pull the driver-written transcript out of the sandbox to the run dir
-        # (same path the Claude worker's transcript uses).
-        native_text = ""
-        try:
-            with sb.open("/tmp/native_transcript.jsonl", "r") as f:
-                native_text = f.read()
-        except Exception:
+        verify_cmd = task_spec.get("verify") or ""
+        any_result = False   # did any session write a native_result row?
+        nrc = None
+        for k in range(1, attempts + 1):
+            # In-sandbox transcript per attempt; locally follow the Claude loop's
+            # naming EXACTLY: attempt 1 lands at transcript_path, sessions 2..n at
+            # transcript.attempt{k}.jsonl.
+            sandbox_tpath = f"/tmp/native_transcript.attempt{k}.jsonl"
+            local_tpath = (transcript_path if k == 1
+                           else out_dir / f"transcript.attempt{k}.jsonl")
+            nproc = sb.exec(
+                "bash", "-lc", "exec python3 /native_driver.py < /dev/null",
+                env={**native_base_env,
+                     "NATIVE_TRANSCRIPT": sandbox_tpath,
+                     "NATIVE_TASK": tl.build_attempt_prompt(description, k, attempts)},
+                timeout=timeout_s + 300, workdir="/testbed")
+            driver_out = nproc.stdout.read()
+            nrc = nproc.wait()
+            # The LAST session to run keeps the driver logs (same path/purpose as
+            # the single-shot path) for post-hoc diagnosis of invalid trials.
+            try:
+                (out_dir / "native_driver.stdout.log").write_text((driver_out or "")[-8000:])
+                (out_dir / "native_driver.stderr.log").write_text(
+                    (nproc.stderr.read() or "")[-4000:])
+            except Exception:
+                pass
             native_text = ""
-        transcript_path.write_text(native_text)
-        nu = tl.parse_native_transcript(native_text)
-        # No terminating native_result row => the driver died before finishing
-        # (our harness fault) — an execution error, never a 'fail'.
-        if not nu["found_result"]:
+            try:
+                with sb.open(sandbox_tpath, "r") as f:
+                    native_text = f.read()
+            except Exception:
+                native_text = ""
+            local_tpath.write_text(native_text)
+            nu = tl.parse_native_transcript(native_text)
+            # No terminating native_result row => the driver died before finishing
+            # THIS session (our harness fault). A failed attempt: keep going if
+            # attempts remain; if EVERY attempt is resultless we return the
+            # historic worker_no_result_line invalid below (at attempts==1 this
+            # reduces to today's terminal behavior exactly, acc==zeros and
+            # n_attempts==0 — n_attempts_run is set only AFTER a result row, as in
+            # the single-shot path).
+            if not nu["found_result"]:
+                continue
+            any_result = True
+            n_attempts_run = k
+            tl.accumulate_usage(acc, {"tokens_in": nu["tokens_in"],
+                                      "tokens_out": nu["tokens_out"],
+                                      "num_turns": nu["num_turns"]})
+            timed_out = (nu["ended"] == "timeout")
+            if attempts == 1:
+                # BYTE-IDENTICAL single-shot: stop_reason keeps today's
+                # native_<ended> value and native_ended stays absent.
+                stop_reason = f"native_{nu['ended']}" if nu["ended"] else "native"
+                break
+            # attempts>1: mirror the Claude loop's stop_reason vocabulary
+            # (self_verify_pass | attempts_exhausted; a timeout rides the
+            # timed_out field), and keep native_<ended> in the additive field.
+            native_ended = nu["ended"]
+            stop_reason = "attempts_exhausted"
+            if nu["ended"] == "timeout":
+                break  # loop-stop (timed_out already recorded), not invalid
+            state = tl.detect_native_verify(native_text, verify_cmd)
+            if tl.should_stop_attempts(state["state"]):
+                stop_reason = "self_verify_pass"
+                break
+        # Every attempt died before writing a result row => execution error, a
+        # harness fault, never a 'fail' (same classification as the single-shot
+        # path; at attempts==1 this is the historic terminal invalid, acc==zeros).
+        if not any_result:
             return _result(tl.classify("worker_no_result_line", "exhausted"),
                            "worker_no_result_line", usage=acc,
                            error=f"native driver wrote no result line (rc={nrc})")
-        tl.accumulate_usage(acc, {"tokens_in": nu["tokens_in"],
-                                  "tokens_out": nu["tokens_out"],
-                                  "num_turns": nu["num_turns"]})
-        n_attempts_run = 1
-        stop_reason = f"native_{nu['ended']}" if nu["ended"] else "native"
-        timed_out = (nu["ended"] == "timeout")
       else:
         # Attempt 1: fresh sandbox + scaffold, with the historic single
         # recreate-retry on an abnormal (no-result, non-timeout) worker death.
@@ -1052,14 +1103,14 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
 
     worker_model selects the served model: 'ornith-35b' (the base) or
     'ornith-lora' (the P4 adapter), both via the in-app vLLM+proxy stack; or
-    'ornith-native' (P9-E control) — stock Ornith run through the native
-    minimal-loop driver DIRECT against serve() (no Claude Code, no proxy),
-    single-session by design (attempts must be 1). All are GPU-budget-gated.
-    Hosted reference workers were removed 2026-07-09.
+    'ornith-native' (the P9-E control) — stock Ornith run through the native
+    minimal-loop driver DIRECT against serve() (no Claude Code, no proxy). All
+    are GPU-budget-gated. Hosted reference workers were removed 2026-07-09.
     tasks: optional comma-separated task-id filter (partial run).
-    attempts: P8 native-loop wrapper — up to N sequential Claude Code sessions
-    per trial in ONE persistent sandbox, early-stopping on the worker's own
-    VERIFY pass (default 1 = today's single-shot; P8 uses 3)."""
+    attempts: P8/P9-F wrapper — up to N sequential worker sessions per trial in
+    ONE persistent sandbox, early-stopping on the worker's own VERIFY pass
+    (default 1 = today's single-shot; P8/P9-F use 3). Applies to BOTH the Claude
+    (P8) and native (P9-F) arms."""
     import sys
     import time as _time
     root = Path(__file__).resolve().parent.parent
@@ -1071,11 +1122,10 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
     if trials < 3:
         raise SystemExit("trials < 3: paired stats need >=3 (PLAN decision rules)")
     if not 1 <= attempts <= 5:
-        raise SystemExit("attempts must be in [1, 5] (P8 uses 3)")
-    # P9-E native control is single-session BY DESIGN (frozen); the attempts
-    # wrapper is a Claude-Code-only mechanism.
-    if worker_model == "ornith-native" and attempts != 1:
-        raise SystemExit("ornith-native is single-session by design; use attempts=1")
+        raise SystemExit("attempts must be in [1, 5] (P8/P9-F use 3)")
+    # P9-F: the attempts wrapper now applies to the native arm too (up to 5
+    # sequential driver sessions in one persistent sandbox); native_driver stays
+    # frozen — the loop is entirely harness-side in run_trial.
 
     variant_dir = root / "experiments" / "variants" / variant
     manifest = variant_dir / "manifest.yaml"
@@ -1202,11 +1252,11 @@ def run_one(task_id: str, variant: str = "v001-baseline",
     still writes its own transcript/diff/verdict to the /runs volume — and prints
     the result dict as JSON. Refuses to reach into sealed holdout.
 
-    attempts: P8 native-loop wrapper — up to N sequential sessions in one
-    persistent sandbox (default 1 = single-shot)."""
+    attempts: P8/P9-F wrapper — up to N sequential sessions in one persistent
+    sandbox (default 1 = single-shot); applies to the Claude and native arms."""
     root = Path(__file__).resolve().parent.parent
     if not 1 <= attempts <= 5:
-        raise SystemExit("attempts must be in [1, 5] (P8 uses 3)")
+        raise SystemExit("attempts must be in [1, 5] (P8/P9-F use 3)")
     variant_dir = root / "experiments" / "variants" / variant
     if not (variant_dir / "manifest.yaml").exists():
         raise SystemExit(f"no such variant: {variant}")
@@ -1222,8 +1272,8 @@ def run_one(task_id: str, variant: str = "v001-baseline",
     if not spec.get("hidden_tests_content"):
         raise SystemExit(f"task missing hidden_tests_content: {task_id}")
 
-    if worker_model == "ornith-native" and attempts != 1:
-        raise SystemExit("ornith-native is single-session by design; use attempts=1")
+    # P9-F: the native arm now supports the attempts wrapper too (no single-session
+    # restriction); the [1, 5] bound above still applies to every worker.
     cfg_tar = _tar_config(variant_dir)
     worker = _make_worker(worker_model)
     if worker_model in ("ornith-35b", "ornith-lora", "ornith-native"):
