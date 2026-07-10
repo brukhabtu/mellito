@@ -279,14 +279,16 @@ def make_exec_fn():
     timeout or nonzero exit is reported as text, the loop keeps going."""
     def run(command):
         try:
+            # py3.6-era testbeds, two traps (runs 20260710T210023, ...T215216):
+            # text= is a 3.7 alias (universal_newlines/encoding instead), and
+            # the sandboxes have no UTF-8 locale, so a str arg with non-ASCII
+            # (model-written heredocs) dies in os.fsencode — pass the command
+            # as utf-8 BYTES to bypass the locale entirely, and decode output
+            # explicitly as utf-8.
             p = subprocess.run(
-                ["bash", "-lc", command], cwd="/testbed",
+                ["bash", "-lc", command.encode("utf-8")], cwd="/testbed",
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                # universal_newlines, not text=: the driver runs under each
-                # testbed's own python, and the oldest envs are 3.6 (text= is
-                # a 3.7 alias; it crashed every django-11066 trial in run
-                # 20260710T210023 before the first command executed).
-                timeout=PER_COMMAND_TIMEOUT, universal_newlines=True,
+                timeout=PER_COMMAND_TIMEOUT, encoding="utf-8",
                 errors="replace")
             out = (p.stdout or "") + f"\n[exit code: {p.returncode}]"
         except subprocess.TimeoutExpired as e:

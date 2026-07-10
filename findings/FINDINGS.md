@@ -1816,3 +1816,29 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   audited runs — suspect across arms, same follow-up as `pytest-5809`.
 - E full sweep (native arm, 40×5) launched on the freed GPU immediately
   after D completed.
+
+## 2026-07-10 · P9-E · RESULT (run `20260710T215216`): native minimal loop 25/40 — mismatch thesis CONFIRMED
+- E = stock Ornith · native tools-API driver · single session, dev 40×5,
+  $2.51, 112 pass / 80 fail / **8 invalid**. **25/40 solved.** Paired vs
+  stock·Claude-Code·single-shot (run `20260707T215242`): **+6/−1/=33, net
+  +5.** The pre-registered prediction (E meaningfully above 20/40) holds:
+  stock Ornith in its trained protocol beats stock Ornith in Claude Code by
+  the same margin our ≥+5 gate demands — the deficit was never raw ability.
+- Fail profile: 50 empty_diff / 30 verify_nonzero — under-action persists
+  natively too (it is the model's core weakness in ANY harness), but ~5 fewer
+  tasks' worth of it than inside Claude Code.
+- Ladder on dev (all vs stock·CC·single 20/40): native single 25 · wrapped
+  stock CC 27 · wrapped tuned CC 28. Claude Code + wrapper ≥ native — the
+  wrapper recovers the protocol-mismatch loss and a little more; tuning adds
+  +1 on top.
+- **Second py3.6 driver bug (all 8 invalids, 3 django tasks):** the sandboxes
+  have no UTF-8 locale, so py3.6 `Popen` dies in `os.fsencode` when the
+  model's command carries non-ASCII (`UnicodeEncodeError`, ascii codec) —
+  crash before the result line, same signature as the `text=` bug. Fix
+  (infra, protocol untouched, driver re-frozen): pass the command as utf-8
+  BYTES and decode output with explicit `encoding="utf-8"`. All 8 invalid
+  trials sat on tasks whose VALID trials all-but-one passed (10973 1/1,
+  11239 2/3, 13023 3/3) — the 25/40 counts them solved on thin evidence, so
+  a 3-task ×5 partial re-run (`--tasks`, ~$0.2) with the fixed driver was
+  launched to put full-strength trials under them; its outcome annotates
+  (not replaces) this run's number.
