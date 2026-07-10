@@ -1720,3 +1720,23 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   alongside. PASS → G4/G6 close positive. FAIL → contamination is the
   headline finding and the write-up says so.
 - Budget: ~$55 spent; battery ceiling ~$13 total.
+
+## 2026-07-10 · P9-E · incident (native-arm protocol mismatch; driver revised BEFORE full run)
+- E liveness (run `20260710T203554-…-ornith-native-partial`, 2 tasks ×3, $0.07):
+  astropy-13453 **3/3 PASS natively** (a chronic under-action loss inside
+  Claude Code — first direct evidence for the mismatch thesis). But
+  django-11066 0/3 with turns=0: transcript shows the model ABANDONING the
+  markdown-fence protocol and degenerating into its RL-trained qwen3_xml
+  `<tool_call>` format (35k chars of tool-call XML to the 12k-token cap).
+- Diagnosis: the driver's "raw text fence" protocol is NOT this model's native
+  transport — the vendor's own evals serve it with the qwen3_xml TOOL PARSER;
+  the tools API is the trained emission surface. A fence-REPL arm conflates
+  "cannot solve" with "cannot speak our dialect" → invalid control.
+- **Driver revision 2 (logged against the freeze clause, then re-frozen):**
+  transport switched to the OpenAI tools API with a single `bash` tool
+  (vLLM's qwen3_xml parser handles the trained format); session ends when the
+  model replies without a tool call. Everything else unchanged (no coaching,
+  60-turn cap, timeouts, truncation, usage accounting). This is a correctness
+  fix toward the PRE-REGISTERED intent (vendor-minimal protocol), not tuning:
+  it was made after 6 liveness trials, before any full-sweep data, and the
+  revision is re-frozen from here.
