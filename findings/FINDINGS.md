@@ -1515,3 +1515,35 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   commits only; Opus = trainer design+authoring, verdict memo, code review;
   Sonnet = converter+tests, pre-flight, sweep, stats; Haiku = job babysitting,
   smoke, pulls. Budget: ~$27 spent of $150; C0 ~$0, C1 ~$15-25.
+
+## 2026-07-10 · P7-C0 · complete (dataset + trainer + pre-flight green; latent P4 bug found)
+- Dataset (commit 74601c2): 158 rows — 71 positives (recapture-only: pass +
+  test-edit-clean + has-thinking; 31 tainted excluded) / 87 negatives (both
+  runs; 51 empty_diff prioritized). Deviation from pre-registration logged:
+  positives restricted to the thinking-complete recapture run (~96 eligible,
+  71 after cap-3) because v001 predates the reasoning-capture fix — v001
+  passes as imitation targets would teach empty-think outputs. Conservative
+  tightening; negatives unaffected (~173 eligible, 87 after cap-3).
+- Trainer (commit d3c1ae3): KTO REJECTED by design (no guaranteed assistant-
+  token masking on multi-turn completions in TRL); weighted-CE unlikelihood on
+  the P4-proven SFTTrainer masking instead — positives token-CE, negatives
+  bounded −log(1−p) (clamped, per-row normalized, neg_lambda=0.2 ×
+  class-balance). Pins: trl==0.29.1 / transformers==5.8.1 / peft==0.19.1
+  (TRL-source-verified label plumbing).
+- **Pre-flight PASS** (modal preflight_pref, CPU-only): assistant-only mask
+  verified non-empty and free of tool/system/user content on real renders of
+  BOTH labels; synthetic forward/backward proves ZERO gradient on
+  non-assistant positions; template byte-identical to stock.
+- **Surprise (logged before workaround, then fixed): P4's length filter was a
+  silent NO-OP.** transformers 5.x apply_chat_template(tokenize=True) returns
+  a dict-like; len() of it is its key count (2), so every example "measured"
+  length 2 and nothing was ever filtered — the preflight's first run printed
+  p50=2 and exposed it. Same bug in train_lora.py's _fits (P4's "0/89
+  filtered" was vacuous — P4 happened to survive because its longest example
+  fit anyway) and train_pref's _ntok. All sites fixed via a version-robust
+  template_token_len(); preflight re-run green with REAL stats: pass p50
+  10629 / p90 27227 / max 73615 (3 over 32768), fail p50 9891 / max 33908
+  (1 over) → the working filter will drop 4 over-length examples at train
+  time (~68 pos / 86 neg trained).
+- Next: C1.1 training (1×H200, ~2-4h, ~$10-20), then smoke → dev 40×5 →
+  the pre-registered three-way gate (639de83).

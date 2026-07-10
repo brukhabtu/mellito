@@ -168,6 +168,18 @@ def neg_weight_from_counts(n_pos, n_neg, neg_lambda):
     return float(neg_lambda) * (float(n_pos) / float(n_neg))
 
 
+def template_token_len(tok_out) -> int:
+    """Token count from apply_chat_template(tokenize=True) output, robust to the
+    return-shape change across transformers versions: 5.x returns a dict-like
+    ({input_ids, attention_mask} — len() of it is its KEY COUNT, the bug the
+    preflight caught printing p50=2), older versions a flat id list, batched
+    calls a list-of-lists."""
+    ids = tok_out["input_ids"] if hasattr(tok_out, "keys") else tok_out
+    if ids and isinstance(ids[0], list):
+        ids = ids[0]
+    return len(ids)
+
+
 def _length_stats(lengths, max_length):
     """p50/p90/max + count-over-max_length for a list of token lengths (pure;
     nearest-rank percentiles, no numpy)."""
@@ -324,10 +336,9 @@ def preflight_pref(n_per_label=3, max_length=32768):
     for lbl in ("pass", "fail"):
         lengths = []
         for ex in by_label[lbl]:
-            ids = tok.apply_chat_template(
+            out = tok.apply_chat_template(
                 cta.anthropic_to_template_messages(ex["messages"]), tokenize=True)
-            n = len(ids[0]) if ids and isinstance(ids[0], list) else len(ids)
-            lengths.append(n)
+            lengths.append(template_token_len(out))
         st = _length_stats(lengths, max_length)
         print(f"[preflight] label={lbl}: n={st['count']} p50={st['p50']} "
               f"p90={st['p90']} max={st['max']} "
@@ -512,9 +523,8 @@ def train_pref(pref_path_in_image="/data/pref.jsonl", epochs=1, lr=5e-5,
     # a broken tail. Count drops per label so run_meta is honest and neg_weight is
     # computed on the KEPT counts.
     def _ntok(ex):
-        ids = tokenizer.apply_chat_template(ex["messages"], tokenize=True)
-        n = len(ids[0]) if ids and isinstance(ids[0], list) else len(ids)
-        return {"_ntok": n}
+        out = tokenizer.apply_chat_template(ex["messages"], tokenize=True)
+        return {"_ntok": template_token_len(out)}
 
     ds = ds.map(_ntok)
     labels_all, ntoks_all = ds["label"], ds["_ntok"]

@@ -368,9 +368,16 @@ def train_lora(sft_path_in_image="/data/sft.jsonl", epochs=2, lr=1e-4,
     # this template exceeds max_length. A truncated trajectory would teach a
     # broken tail; dropping keeps every kept target complete.
     def _fits(ex):
-        ids = tokenizer.apply_chat_template(ex["messages"], tokenize=True)
-        n = len(ids[0]) if ids and isinstance(ids[0], list) else len(ids)
-        return n <= max_length
+        # transformers 5.x returns a dict-like from apply_chat_template
+        # (tokenize=True); len() of it is its KEY COUNT (2), which made this
+        # filter a silent no-op in P4 (every example measured "length 2", so
+        # nothing was ever dropped). Fixed 2026-07-10 after the P7-C0.4
+        # preflight caught the same bug in train_pref's stats.
+        out = tokenizer.apply_chat_template(ex["messages"], tokenize=True)
+        ids = out["input_ids"] if hasattr(out, "keys") else out
+        if ids and isinstance(ids[0], list):
+            ids = ids[0]
+        return len(ids) <= max_length
 
     n_before = len(ds)
     ds = ds.filter(_fits)
