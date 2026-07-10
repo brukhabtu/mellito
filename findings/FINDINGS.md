@@ -1864,3 +1864,33 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   unlock flag. Arms: stock·CC·single, tuned·CC·wrapped, stock·CC·wrapped
   (D-trigger met). Criterion: holdout paired delta within 5 of dev's +8.
   Spend ≈ $60 of $150.
+
+## 2026-07-10 · P9-F · PRE-REGISTRATION (native + attempts wrapper — the missing factorial cell)
+- Motivation (operator-approved): D/E left an asymmetric claim — "CC+wrapper
+  (27/28) ≥ native (25)" compares 3 sessions against 1. The symmetric protocol
+  claim needs **F = stock · native tools-API driver · attempts=3 wrapper**
+  (dev 40×5). Measurement-only; P8 remains the last intervention; no gate
+  consequence for G4/G6 — F informs the write-up's shipping recommendation.
+- Mechanics (harness-side, mirroring P8 exactly; `native_driver.py` stays
+  FROZEN and untouched): one persistent sandbox per trial; up to 3 sequential
+  driver sessions; attempt-k task text = `build_attempt_prompt` (byte-identical
+  base description at k=1, same preamble as CC for k>1, delivered via
+  NATIVE_TASK env); early stop on the model's OWN verify pass detected from
+  the native transcript (new pure `trial_logic.detect_native_verify`: last
+  bash tool_call referencing VERIFY.txt / the verify command, paired tool
+  output's trailing `[exit code: 0]` → RAN_PASS; reuses
+  `should_stop_attempts`). Usage accumulates across sessions (cost honesty).
+  attempts==1 native behavior stays byte-identical (E remains reproducible).
+- Registered readings: **F ≥ 29** → native substrate wins even wrapped; CC
+  costs performance after wrapping; shipping recommendation flips native.
+  **F 26–28** → wrapper closes the protocol gap; CC is free once wrapped.
+  **F ≤ 25** → retries add ~nothing natively — supports the mechanism reading
+  that the wrapper's value = restoring the two-stage geometry CC takes away
+  (the native session already has it in-session).
+- Paired comparisons: F vs E (wrapper's marginal value natively), F vs D
+  (protocol effect under wrapper), ladder anchor stock·CC·single.
+- Holdout coupling (pre-committed, mirrors D's trigger): IFF F beats D by ≥2
+  the holdout battery gains a native-wrapped arm; otherwise composition
+  unchanged.
+- Cost: liveness ≤$0.3 + full ~$3–5 (early stop caps the multiplier); P9
+  spend ≈ $5 of the ~$13 battery ceiling.
