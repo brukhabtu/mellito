@@ -1,9 +1,11 @@
 """Unit tests for the P9-E native minimal-loop driver (no network, no sandbox).
 
-Covers the pure pieces: shell-block extraction / turn classification, output
-truncation, the malformed-turn state machine, transcript row shapes, one full
-loop driven by a fake chat+exec client, and the run_trial-side transcript
-readback (trial_logic.parse_native_transcript).
+Revision 2 protocol: OpenAI tools API transport (the model's native qwen3_xml
+tool format, parsed server-side). Covers the pure pieces: tool-call command
+extraction, the first-only rule for multiple tool_calls, no-tool-call = done,
+output truncation, transcript row shapes, one full loop driven by a fake
+chat+exec client, and the run_trial-side transcript readback
+(trial_logic.parse_native_transcript).
 """
 import json
 import os
@@ -30,8 +32,16 @@ class FakeChat:
         return self.responses.pop(0)
 
 
-def _resp(content, reasoning="", usage=None):
-    return {"content": content, "reasoning": reasoning, "usage": usage or {}}
+def _tc(command, call_id="call_1", name="bash", raw_args=None):
+    """One OpenAI-shape tool_call (arguments as a JSON string, the wire form)."""
+    args = raw_args if raw_args is not None else json.dumps({"command": command})
+    return {"id": call_id, "type": "function",
+            "function": {"name": name, "arguments": args}}
+
+
+def _resp(content="", tool_calls=None, reasoning="", usage=None):
+    return {"content": content, "reasoning": reasoning,
+            "usage": usage or {}, "tool_calls": tool_calls or []}
 
 
 def _collect_emit():
@@ -53,67 +63,41 @@ def _fake_now(seq):
     return now
 
 
-def _bash(cmd):
-    return f"Let me run this.\n```bash\n{cmd}\n```"
+# --- extract_command --------------------------------------------------------
+
+def test_extract_command_wire_shape():
+    cmd, err = nd.extract_command(_tc("pytest -q"))
+    assert cmd == "pytest -q" and err is None
 
 
-# --- extraction / classification ------------------------------------------
-
-def test_extract_single_block():
-    assert nd.extract_bash_blocks(_bash("ls -la")) == ["ls -la"]
-
-
-def test_classify_single_command():
-    info = nd.classify_turn(_bash("pytest -q"))
-    assert info["kind"] == "command"
-    assert info["command"] == "pytest -q"
-    assert info["multiple_blocks"] is False
+def test_extract_command_already_parsed_args():
+    tc = {"id": "c", "function": {"name": "bash",
+                                  "arguments": {"command": "ls -la"}}}
+    cmd, err = nd.extract_command(tc)
+    assert cmd == "ls -la" and err is None
 
 
-def test_classify_multiple_blocks_takes_first_and_flags():
-    text = _bash("first cmd") + "\nthen\n" + _bash("second cmd")
-    info = nd.classify_turn(text)
-    assert info["kind"] == "command"
-    assert info["command"] == "first cmd"          # first only
-    assert info["multiple_blocks"] is True         # protocol-violation flag
+def test_extract_command_bad_json_args():
+    cmd, err = nd.extract_command(_tc("", raw_args="{not json"))
+    assert cmd is None and "JSON" in err
 
 
-def test_classify_done_line():
-    info = nd.classify_turn("The fix verifies.\nDONE")
-    assert info["kind"] == "done"
-    assert info["command"] is None
+def test_extract_command_missing_command_key():
+    cmd, err = nd.extract_command(_tc("", raw_args=json.dumps({"cmd": "ls"})))
+    assert cmd is None and "command" in err
 
 
-def test_classify_command_wins_over_done():
-    # A command present means the model is not finished — it beats a stray DONE.
-    info = nd.classify_turn("DONE\n" + _bash("echo still going"))
-    assert info["kind"] == "command"
-    assert info["command"] == "echo still going"
+def test_extract_command_empty_command_rejected():
+    cmd, err = nd.extract_command(_tc("   "))
+    assert cmd is None and err
 
 
-def test_classify_malformed_prose_only():
-    info = nd.classify_turn("I think we should edit the parser somehow.")
-    assert info["kind"] == "malformed"
+def test_extract_command_unknown_tool():
+    cmd, err = nd.extract_command(_tc("ls", name="python"))
+    assert cmd is None and "unknown tool" in err
 
 
-def test_classify_bare_fence_is_not_a_command():
-    # A bare ``` fence (no shell language) is NOT executed — off protocol.
-    info = nd.classify_turn("```\nls\n```")
-    assert info["kind"] == "malformed"
-
-
-def test_classify_accepts_sh_and_shell_fences():
-    assert nd.classify_turn("```sh\nls\n```")["kind"] == "command"
-    assert nd.classify_turn("```shell\nls\n```")["kind"] == "command"
-
-
-def test_done_requires_line_by_itself():
-    # "DONE" embedded in prose is not the terminator.
-    info = nd.classify_turn("I am not DONE yet, more to do.")
-    assert info["kind"] == "malformed"
-
-
-# --- truncation -----------------------------------------------------------
+# --- truncation -------------------------------------------------------------
 
 def test_truncate_passthrough_when_short():
     assert nd.truncate_output("hello", limit=100) == "hello"
@@ -128,26 +112,39 @@ def test_truncate_keeps_head_and_tail():
     assert "truncated" in out
 
 
-# --- system prompt is frozen / minimal ------------------------------------
+# --- system prompt is frozen / minimal --------------------------------------
 
 def test_system_prompt_interpolates_task_and_names_verify():
     sp = nd.build_system_prompt("Fix the flaky test in foo.py")
     assert "Fix the flaky test in foo.py" in sp
     assert "VERIFY.txt" in sp
     assert "/testbed" in sp
-    assert "```bash" in sp
-    assert "DONE" in sp
-    # Control arm: no completion-contract / self-direction coaching.
+    assert "bash tool" in sp
+    assert "reply without\ncalling any tool" in sp.replace("\r\n", "\n")
+    # Control arm: no completion-contract / self-direction coaching, and none
+    # of the retired fence-protocol text.
+    assert "```" not in sp
+    assert "DONE" not in sp
     assert sp.count("\n") < 20
 
 
-# --- full loop: command -> output -> DONE ---------------------------------
+def test_bash_tool_schema_frozen():
+    fn = nd.BASH_TOOL["function"]
+    assert nd.BASH_TOOL["type"] == "function"
+    assert fn["name"] == "bash"
+    assert fn["parameters"]["required"] == ["command"]
+    assert list(fn["parameters"]["properties"]) == ["command"]
+
+
+# --- full loop: tool call -> output -> no-tool-call done --------------------
 
 def test_loop_command_then_done():
     chat = FakeChat([
-        _resp(_bash("cat VERIFY.txt"), reasoning="<think>plan</think>",
+        _resp(content="Checking the verify command.",
+              tool_calls=[_tc("cat VERIFY.txt", call_id="call_A")],
+              reasoning="<think>plan</think>",
               usage={"prompt_tokens": 100, "completion_tokens": 20}),
-        _resp("The fix passes.\nDONE",
+        _resp(content="The fix passes. All done.",
               usage={"prompt_tokens": 150, "completion_tokens": 8}),
     ])
     executed = []
@@ -164,61 +161,91 @@ def test_loop_command_then_done():
     assert executed == ["cat VERIFY.txt"]
     assert out["totals"] == {"tokens_in": 250, "tokens_out": 28}
 
-    # Row order: system, kickoff-user, assistant(cmd), user(output),
-    # assistant(DONE), native_result.
+    # Row order: system, kickoff-user, assistant(tool_call), tool(output),
+    # assistant(done), native_result.
     assert rows[0]["role"] == "system"
     assert rows[1] == {"role": "user", "content": nd.KICKOFF}
     assert rows[2]["role"] == "assistant"
+    assert rows[2]["tool_calls"][0]["id"] == "call_A"
     assert rows[2]["reasoning"] == "<think>plan</think>"   # reasoning recorded
     assert rows[2]["usage"] == {"prompt_tokens": 100, "completion_tokens": 20}
-    assert rows[3] == {"role": "user",
+    assert "protocol_violation" not in rows[2]
+    assert rows[3] == {"role": "tool", "tool_call_id": "call_A",
                        "content": "pytest ... 1 passed\n[exit code: 0]"}
     assert rows[4]["role"] == "assistant"
+    assert "tool_calls" not in rows[4]
     assert rows[-1] == {"type": "native_result", "turns": 1, "ended": "done",
                         "usage_total": {"tokens_in": 250, "tokens_out": 28}}
 
-    # Reasoning is NEVER fed back: the 2nd chat call's message list carries the
-    # assistant turn WITHOUT a reasoning field.
-    second_call_msgs = chat.calls[1]
-    asst = [m for m in second_call_msgs if m["role"] == "assistant"]
-    assert asst and "reasoning" not in asst[0]
-    assert asst[0]["content"] == _bash("cat VERIFY.txt")
+    # Standard OpenAI multi-turn tool flow in the 2nd call's history:
+    # assistant WITH tool_calls, then the matching role:"tool" reply.
+    msgs = chat.calls[1]
+    asst = [m for m in msgs if m["role"] == "assistant"]
+    assert asst and asst[0]["tool_calls"][0]["id"] == "call_A"
+    assert "reasoning" not in asst[0]          # reasoning NEVER fed back
+    tool_msgs = [m for m in msgs if m["role"] == "tool"]
+    assert tool_msgs == [{"role": "tool", "tool_call_id": "call_A",
+                          "content": "pytest ... 1 passed\n[exit code: 0]"}]
 
 
-# --- malformed-turn policy state machine ----------------------------------
-
-def test_two_consecutive_malformed_ends_protocol():
-    chat = FakeChat([_resp("no command here"), _resp("still no command")])
+def test_no_tool_call_first_reply_is_done_not_malformed():
+    chat = FakeChat([_resp(content="This task needs no changes; summary here.")])
     rows, emit = _collect_emit()
     out = nd.run_loop(chat, lambda c: "x", "task", emit=emit, timeout_s=10_000)
-    assert out["ended"] == "protocol"
+    assert out["ended"] == "done"
     assert out["turns"] == 0
-    # Exactly one reminder was emitted (after the first malformed turn).
-    reminders = [r for r in rows
-                 if r.get("role") == "user" and r.get("content") == nd.PROTOCOL_REMINDER]
-    assert len(reminders) == 1
+    assert rows[-1]["ended"] == "done"
 
 
-def test_malformed_then_command_resets_counter():
+# --- multiple tool_calls: first only + violation flag ------------------------
+
+def test_multiple_tool_calls_first_only_and_flagged():
     chat = FakeChat([
-        _resp("no command"),                 # malformed #1 -> reminder
-        _resp(_bash("echo hi")),             # command -> resets
-        _resp("prose again"),                # malformed #1 again (reset worked)
-        _resp("still prose"),                # malformed #2 -> protocol end
+        _resp(tool_calls=[_tc("first cmd", call_id="c1"),
+                          _tc("second cmd", call_id="c2")]),
+        _resp(content="done"),
     ])
+    executed = []
     rows, emit = _collect_emit()
-    out = nd.run_loop(chat, lambda c: "out", "task", emit=emit, timeout_s=10_000)
-    assert out["ended"] == "protocol"
-    assert out["turns"] == 1                  # the one command ran
-    reminders = [r for r in rows
-                 if r.get("role") == "user" and r.get("content") == nd.PROTOCOL_REMINDER]
-    assert len(reminders) == 2                # one before reset, one after
+    out = nd.run_loop(chat, lambda c: executed.append(c) or "out", "task",
+                      emit=emit, timeout_s=10_000)
+    assert executed == ["first cmd"]                       # first only
+    assert out["turns"] == 1
+    asst = [r for r in rows if r.get("role") == "assistant"]
+    assert asst[0]["protocol_violation"] == "multiple_tool_calls"
+    assert len(asst[0]["tool_calls"]) == 2                 # transcript keeps all
+    # Conversation history keeps ONLY the executed call (so every tool_call in
+    # history has a matching tool reply); the tool reply pairs with c1.
+    msgs = chat.calls[1]
+    hist_asst = [m for m in msgs if m["role"] == "assistant"][0]
+    assert [c["id"] for c in hist_asst["tool_calls"]] == ["c1"]
+    assert [m["tool_call_id"] for m in msgs if m["role"] == "tool"] == ["c1"]
 
 
-# --- limits: max_turns and wall-clock timeout -----------------------------
+# --- invalid tool call: error reply, still a bounded turn --------------------
+
+def test_invalid_args_reports_error_and_counts_turn():
+    chat = FakeChat([
+        _resp(tool_calls=[_tc("", call_id="cX", raw_args="{broken")]),
+        _resp(content="done"),
+    ])
+    executed = []
+    rows, emit = _collect_emit()
+    out = nd.run_loop(chat, lambda c: executed.append(c) or "out", "task",
+                      emit=emit, timeout_s=10_000)
+    assert executed == []                                  # nothing executed
+    assert out["ended"] == "done"
+    assert out["turns"] == 1                               # still counts (bounded)
+    trows = [r for r in rows if r.get("role") == "tool"]
+    assert trows[0]["tool_call_id"] == "cX"
+    assert trows[0]["content"].startswith("[driver] invalid tool call:")
+
+
+# --- limits: max_turns and wall-clock timeout --------------------------------
 
 def test_max_turns_ends_loop():
-    chat = FakeChat([_resp(_bash("echo x")) for _ in range(5)])
+    chat = FakeChat([_resp(tool_calls=[_tc(f"echo {i}", call_id=f"c{i}")])
+                     for i in range(5)])
     rows, emit = _collect_emit()
     out = nd.run_loop(chat, lambda c: "out", "task", emit=emit,
                       timeout_s=10_000, max_turns=3)
@@ -228,7 +255,8 @@ def test_max_turns_ends_loop():
 
 
 def test_wall_clock_timeout_ends_loop():
-    chat = FakeChat([_resp(_bash("echo x")), _resp(_bash("echo y"))])
+    chat = FakeChat([_resp(tool_calls=[_tc("echo x")]),
+                     _resp(tool_calls=[_tc("echo y")])])
     # now(): start=0, iter1 check=1 (<100 ok), iter2 check=9999 (>=100 -> timeout).
     now = _fake_now([0, 1, 9999])
     rows, emit = _collect_emit()
@@ -250,22 +278,15 @@ def test_chat_exception_ends_error_and_still_writes_result():
     assert rows[-1]["ended"] == "error"
 
 
-def test_multiple_blocks_records_violation_row():
-    text = _bash("first") + "\n" + _bash("second")
-    chat = FakeChat([_resp(text), _resp("DONE")])
-    rows, emit = _collect_emit()
-    nd.run_loop(chat, lambda c: "out", "task", emit=emit, timeout_s=10_000)
-    asst = [r for r in rows if r.get("role") == "assistant"]
-    assert asst[0].get("protocol_violation") == "multiple_bash_blocks"
-
-
-# --- run_trial-side readback (trial_logic.parse_native_transcript) --------
+# --- run_trial-side readback (trial_logic.parse_native_transcript) ----------
 
 def test_parse_native_transcript_uses_result_total():
     rows, emit = _collect_emit()
     chat = FakeChat([
-        _resp(_bash("ls"), usage={"prompt_tokens": 100, "completion_tokens": 20}),
-        _resp("DONE", usage={"prompt_tokens": 130, "completion_tokens": 5}),
+        _resp(tool_calls=[_tc("ls")],
+              usage={"prompt_tokens": 100, "completion_tokens": 20}),
+        _resp(content="summary",
+              usage={"prompt_tokens": 130, "completion_tokens": 5}),
     ])
     nd.run_loop(chat, lambda c: "out", "task", emit=emit, timeout_s=10_000)
     text = "\n".join(json.dumps(r) for r in rows)
@@ -282,6 +303,7 @@ def test_parse_native_transcript_no_result_line_falls_back():
     lines = [
         json.dumps({"role": "system", "content": "s"}),
         json.dumps({"role": "assistant", "content": "x",
+                    "tool_calls": [_tc("ls")],
                     "usage": {"prompt_tokens": 40, "completion_tokens": 7}}),
     ]
     u = tl.parse_native_transcript(lines)

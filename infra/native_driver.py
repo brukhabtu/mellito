@@ -2,25 +2,34 @@
 
 Runs INSIDE the task sandbox (the same container run_trial creates for the
 Claude-Code worker). It lets STOCK Ornith solve a coding task WITHOUT Claude
-Code: a single session, a pure-text shell-REPL loop, the model decides when it
+Code: a single session, one bash tool in a REPL loop, the model decides when it
 is done. Deliberately dumb and FROZEN — this driver is never tuned. It is the
 native baseline the P9 mismatch thesis is measured against, so anything that
 looks like coaching, self-direction, or a completion contract is intentionally
 absent (mirrors v001's minimal spirit).
 
-Protocol (one turn = one shell command):
-  - The system prompt states the task, points at VERIFY.txt, and gives the
-    protocol rules — nothing else.
-  - Each assistant turn contains exactly one ```bash fenced command; the driver
-    runs it (subprocess, cwd=/testbed, 120s/command, output truncated ~8k) and
-    returns the output as the next user message.
-  - The model finishes by emitting DONE on a line by itself instead of a command.
+Revision 2 (liveness run 20260710T203554): the original markdown-fence text
+protocol was NOT the model's native transport — it degenerated into its
+RL-trained qwen3_xml <tool_call> XML (django-11066: 35k chars to the token cap,
+0 executed turns, ended=protocol). The vendor serves this model with the
+qwen3_xml TOOL PARSER, so the transport is now the OpenAI tools API;
+everything else is identical. Re-frozen after this revision.
+
+Protocol (one turn = one bash tool call):
+  - The system prompt states the task, points at VERIFY.txt, and says: use the
+    bash tool; reply without calling any tool when done. Nothing else.
+  - Each assistant turn is expected to carry exactly one `bash` tool_call; the
+    driver runs its `command` (subprocess, cwd=/testbed, 120s/command, output
+    truncated ~8k) and replies with a role:"tool" message. Multiple tool_calls
+    in one turn: the FIRST is executed, the rest are dropped (recorded as a
+    protocol violation in the transcript row).
+  - An assistant reply with NO tool_calls means the model is done (its content
+    is the final summary) — a legitimate end, never malformed.
 
 Transport: OpenAI /v1/chat/completions directly against serve() (NOT the
-LiteLLM/Anthropic proxy — that schema is Claude-Code-only). NO tools param;
-pure text is the most native protocol for Ornith's RL. The qwen3 reasoning
-parser strips <think> into `reasoning_content`; we RECORD it in the transcript
-but never feed it back into the conversation.
+LiteLLM/Anthropic proxy — that schema is Claude-Code-only). The qwen3
+reasoning parser strips <think> into `reasoning_content`; we RECORD it in the
+transcript but never feed it back into the conversation.
 
 Config comes from the environment (run_trial sets these):
   NATIVE_BASE_URL   serve() web URL (we POST {base}/v1/chat/completions)
@@ -31,49 +40,51 @@ Config comes from the environment (run_trial sets these):
   NATIVE_TASK       task description (or NATIVE_TASK_FILE to read it from disk)
   NATIVE_TASK_FILE  fallback file for the task description (e.g. /testbed/TASK.md)
 
-The pure helpers (extract/classify a turn, truncate output, build the system
-prompt, run the loop against injected chat/exec callables) carry no network or
-subprocess dependency, so they are unit-tested without a container.
+The pure helpers (tool-call command extraction, truncation, the system prompt,
+the loop against injected chat/exec callables) carry no network or subprocess
+dependency, so they are unit-tested without a container.
 """
 
 import json
 import os
-import re
 import subprocess
 import time
 import urllib.request
 
 # --- FROZEN constants (this driver is never tuned) ------------------------
-MAX_TURNS = 60              # max EXECUTED shell commands per session
+MAX_TURNS = 60              # max EXECUTED tool turns per session
 PER_COMMAND_TIMEOUT = 120   # seconds per shell command
 OUTPUT_LIMIT = 8000         # chars of command output returned to the model
-NATIVE_MAX_TOKENS = int(os.environ.get("NATIVE_MAX_TOKENS", "6000"))
+NATIVE_MAX_TOKENS = int(os.environ.get("NATIVE_MAX_TOKENS", "12000"))
 CHAT_TIMEOUT = 600          # seconds per model call (HTTP)
 
 # The single kickoff user turn (the system prompt already carries the task).
-# Protocol-level only — no task-specific coaching.
 KICKOFF = "Begin."
 
-# One-line reminder used exactly once after a malformed turn (see run_loop).
-PROTOCOL_REMINDER = (
-    "Reply with exactly one ```bash command block, or DONE on a line by "
-    "itself to finish."
-)
+# The ONE tool the driver offers — a bash command in /testbed. Frozen.
+BASH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "bash",
+        "description": "Run a shell command in /testbed and return its output.",
+        "parameters": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
+}
 
 # FROZEN system-prompt template. Task description is interpolated; the rest is
-# fixed. <20 lines, protocol only — no completion-contract / self-direction text.
+# fixed. Minimal, protocol only — no completion-contract / self-direction text.
 _SYSTEM_TEMPLATE = """\
 You are solving a software engineering task in a git repository at /testbed.
 
 The file /testbed/VERIFY.txt contains the shell command that decides success;
 run it to check your work.
 
-Protocol (follow it exactly):
-- Reply with your reasoning, then exactly ONE shell command to run, inside a
-  single ```bash fenced code block.
-- I will execute that command in /testbed and reply with its output.
-- Send one command per turn and wait for its output before sending the next.
-- When the task is complete, reply with DONE on a line by itself and no command.
+Use the bash tool to run commands; when the task is complete, reply without
+calling any tool.
 
 Task:
 {task}"""
@@ -84,44 +95,31 @@ def build_system_prompt(task: str) -> str:
     return _SYSTEM_TEMPLATE.format(task=(task or "").strip())
 
 
-# A recognized shell fence: ```bash / ```sh / ```shell then a newline, then the
-# command body up to the closing fence. A bare ``` fence (no shell language) is
-# NOT a command — that keeps a markdown code block of prose from being executed,
-# and an off-protocol turn is honestly scored as malformed.
-_FENCE_RE = re.compile(
-    r"```[ \t]*(?:bash|sh|shell)[ \t]*\r?\n(.*?)```",
-    re.DOTALL | re.IGNORECASE,
-)
+def extract_command(tool_call) -> tuple:
+    """(command, error) from one OpenAI tool_call dict.
 
-
-def extract_bash_blocks(text: str) -> list:
-    """Every ```bash|sh|shell fenced command body in `text`, in order."""
-    return [m.group(1).strip() for m in _FENCE_RE.finditer(text or "")]
-
-
-def _has_done_line(text: str) -> bool:
-    """True iff some line of `text` is exactly DONE (stripped)."""
-    return any(line.strip() == "DONE" for line in (text or "").splitlines())
-
-
-def classify_turn(text: str) -> dict:
-    """Classify one assistant turn's content into the protocol's three cases.
-
-    Returns {"kind", "command", "multiple_blocks"}:
-      - a shell fence present -> kind="command", command=the FIRST block's body;
-        multiple_blocks=True flags a protocol violation (we still run the first
-        only). A command present ALWAYS wins over a stray DONE line — an emitted
-        command means the model is not finished.
-      - no command but a lone DONE line -> kind="done".
-      - neither -> kind="malformed".
+    Valid iff the function name is `bash` and arguments carry a non-empty
+    string `command` (arguments may arrive as a JSON string — the OpenAI wire
+    shape — or already parsed). On any violation returns (None, reason); the
+    loop reports the reason back in the tool reply and the round still counts
+    as an executed turn (bounded progress; no reprompt machinery).
     """
-    blocks = extract_bash_blocks(text)
-    if blocks:
-        return {"kind": "command", "command": blocks[0],
-                "multiple_blocks": len(blocks) > 1}
-    if _has_done_line(text):
-        return {"kind": "done", "command": None, "multiple_blocks": False}
-    return {"kind": "malformed", "command": None, "multiple_blocks": False}
+    fn = (tool_call or {}).get("function") or {}
+    name = fn.get("name")
+    if name != "bash":
+        return None, f"unknown tool {name!r} (only 'bash' is available)"
+    args = fn.get("arguments")
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except (ValueError, TypeError):
+            return None, "arguments are not valid JSON"
+    if not isinstance(args, dict):
+        return None, "arguments are not an object"
+    command = args.get("command")
+    if not isinstance(command, str) or not command.strip():
+        return None, "missing non-empty string 'command'"
+    return command, None
 
 
 def truncate_output(text: str, limit: int = OUTPUT_LIMIT) -> str:
@@ -138,26 +136,36 @@ def truncate_output(text: str, limit: int = OUTPUT_LIMIT) -> str:
 
 def run_loop(chat_fn, exec_fn, task, *, emit, timeout_s=None,
              max_turns=MAX_TURNS, now=time.time, kickoff=KICKOFF):
-    """The frozen text REPL. Pure w.r.t. its dependencies — `chat_fn`,
+    """The frozen tool REPL. Pure w.r.t. its dependencies — `chat_fn`,
     `exec_fn`, `emit`, and `now` are all injected, so the loop is testable
     without a network or a subprocess.
 
-      chat_fn(messages) -> {"content", "reasoning", "usage"} (usage is the
-                           OpenAI usage dict; may be {}).
+      chat_fn(messages) -> {"content", "reasoning", "usage", "tool_calls"}
+                           (usage is the OpenAI usage dict; may be {};
+                            tool_calls a possibly-empty list).
       exec_fn(command)  -> str output (already truncated by the caller's exec).
       emit(row)         -> sink for each transcript row (dict).
 
     Emits, in order: the system row, the kickoff user row, then per model turn
-    an assistant row (+ reasoning/usage when present) and either a command's
-    output user row or a one-time protocol-reminder user row, and finally a
-    single {"type":"native_result", ...} row. Reasoning is recorded in the
-    transcript but NEVER sent back into `messages`.
+    an assistant row (with tool_calls/reasoning/usage when present) and, when a
+    tool ran, its role:"tool" reply row; finally a single
+    {"type":"native_result", ...} row. Reasoning is recorded in the transcript
+    but NEVER sent back into `messages`.
+
+    Per assistant turn: no tool_calls -> the model is done (its content is the
+    final summary). One or more tool_calls -> the FIRST is executed (extras
+    dropped; `protocol_violation` flags the transcript row) and its output goes
+    back as a role:"tool" message. The conversation history keeps ONLY the
+    executed tool_call on the assistant message so every tool_call in history
+    has a matching tool reply (a dangling call would break the chat template's
+    multi-turn tool flow); the transcript row records ALL calls. An invalid
+    call (bad args / unknown tool) gets the error text as its tool reply and
+    still counts as an executed turn.
 
     Ends (native_result "ended"):
-      done       model emitted DONE
-      max_turns  MAX_TURNS commands executed
+      done       assistant reply with no tool_calls
+      max_turns  MAX_TURNS tool turns executed
       timeout    session wall-clock exceeded
-      protocol   two consecutive malformed turns
       error      chat_fn raised (network/API failure)
     """
     system = build_system_prompt(task)
@@ -167,8 +175,7 @@ def run_loop(chat_fn, exec_fn, task, *, emit, timeout_s=None,
     emit({"role": "user", "content": kickoff})
 
     totals = {"tokens_in": 0, "tokens_out": 0}
-    turns = 0                 # EXECUTED command turns (malformed reprompts don't count)
-    consecutive_malformed = 0
+    turns = 0                 # EXECUTED tool turns
     ended = None
     start = now()
 
@@ -190,40 +197,42 @@ def run_loop(chat_fn, exec_fn, task, *, emit, timeout_s=None,
         content = resp.get("content") or ""
         reasoning = resp.get("reasoning") or ""
         usage = resp.get("usage") or {}
+        tool_calls = resp.get("tool_calls") or []
         totals["tokens_in"] += int(usage.get("prompt_tokens") or 0)
         totals["tokens_out"] += int(usage.get("completion_tokens") or 0)
 
-        info = classify_turn(content)
         arow = {"role": "assistant", "content": content}
+        if tool_calls:
+            arow["tool_calls"] = tool_calls   # record ALL calls, even dropped ones
         if reasoning:
             arow["reasoning"] = reasoning
         if usage:
             arow["usage"] = usage
-        if info["multiple_blocks"]:
-            arow["protocol_violation"] = "multiple_bash_blocks"
+        if len(tool_calls) > 1:
+            arow["protocol_violation"] = "multiple_tool_calls"
         emit(arow)
-        # Never feed reasoning_content back into the conversation.
-        messages.append({"role": "assistant", "content": content})
 
-        kind = info["kind"]
-        if kind == "done":
+        if not tool_calls:
+            # Legitimate end: the model replied without calling any tool.
+            messages.append({"role": "assistant", "content": content})
             ended = "done"
             break
-        if kind == "malformed":
-            consecutive_malformed += 1
-            if consecutive_malformed >= 2:
-                ended = "protocol"
-                break
-            messages.append({"role": "user", "content": PROTOCOL_REMINDER})
-            emit({"role": "user", "content": PROTOCOL_REMINDER})
-            continue
 
-        # kind == "command"
-        consecutive_malformed = 0
-        output = exec_fn(info["command"])
+        call = tool_calls[0]
+        command, err = extract_command(call)
+        # History keeps only the EXECUTED call (see docstring). Reasoning is
+        # never fed back into the conversation.
+        messages.append({"role": "assistant", "content": content,
+                         "tool_calls": [call]})
+        if err:
+            output = f"[driver] invalid tool call: {err}"
+        else:
+            output = exec_fn(command)
         turns += 1
-        messages.append({"role": "user", "content": output})
-        emit({"role": "user", "content": output})
+        trow = {"role": "tool", "tool_call_id": (call or {}).get("id") or "",
+                "content": output}
+        messages.append(trow)
+        emit(trow)
 
     emit({"type": "native_result", "turns": turns,
           "ended": ended or "unknown", "usage_total": dict(totals)})
@@ -234,14 +243,17 @@ def run_loop(chat_fn, exec_fn, task, *, emit, timeout_s=None,
 
 def make_chat_fn(base_url: str, api_key: str, model: str,
                  max_tokens: int = NATIVE_MAX_TOKENS):
-    """OpenAI /v1/chat/completions client (urllib, no SDK dep in the sandbox).
-    NO tools param — pure text. temperature 0 mirrors the harness's determinism.
-    Lifts vLLM's reasoning_content off the message when present."""
+    """OpenAI /v1/chat/completions client (urllib, no SDK dep in the sandbox)
+    offering the single frozen bash tool with tool_choice auto — the model's
+    native qwen3_xml transport, parsed server-side by serve()'s
+    --tool-call-parser. temperature 0 mirrors the harness's determinism. Lifts
+    vLLM's reasoning_content off the message when present."""
     endpoint = base_url.rstrip("/") + "/v1/chat/completions"
 
     def chat(messages):
         body = {"model": model, "messages": messages,
-                "temperature": 0, "max_tokens": max_tokens}
+                "temperature": 0, "max_tokens": max_tokens,
+                "tools": [BASH_TOOL], "tool_choice": "auto"}
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -255,6 +267,7 @@ def make_chat_fn(base_url: str, api_key: str, model: str,
             "content": msg.get("content") or "",
             "reasoning": msg.get("reasoning_content") or msg.get("reasoning") or "",
             "usage": resp.get("usage") or {},
+            "tool_calls": msg.get("tool_calls") or [],
         }
 
     return chat
