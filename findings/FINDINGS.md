@@ -1796,3 +1796,23 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   Path-level audit can't distinguish weakened-assertion from
   legitimately-coupled edit; flagged for content review and for holdout
   interpretation. No other task repeats across runs.
+
+## 2026-07-10 · P9-D · RESULT (run `20260710T202226`): wrapped-STOCK 27/40 — the wrapper carries most of the gain
+- D = stock Ornith · Claude Code · attempts=3 wrapper, dev 40×5, $2.13, 1
+  invalid. **27/40 solved.** Paired (infra/paired_lora.py):
+  - **D vs stock single-shot** (run `20260707T215242`): **+7/−0/=33, net +7.**
+  - **Wrapped-TUNED** (run `20260710T154237`) **vs D: +2/−1/=37, net +1.**
+- Pre-registered reading triggered: D within 2 of C's 28 → *wrapper is
+  (nearly) the whole story*. The adapter's marginal value on top of the
+  wrapper is net +1 — far below its +3 single-shot delta; the wrapper and the
+  tuning consolidate largely the SAME flip-candidates (mirrors the P6-B
+  selection/tuning overlap). **Consequence (pre-registered): the holdout
+  battery gains a wrapped-stock arm.** Shipping implication for the write-up:
+  the simplest recipe (stock model + ~100-line attempts loop) captures ~7/8
+  of the composed system's gain.
+- Taint spot-check on D's 7 winning tasks (same predicate as the drift
+  audit): none is tainted-only (each has ≥1 clean pass); noted
+  `scikit-learn-13496` is 4/5 test-touching here and tainted-only in both
+  audited runs — suspect across arms, same follow-up as `pytest-5809`.
+- E full sweep (native arm, 40×5) launched on the freed GPU immediately
+  after D completed.
