@@ -1,0 +1,67 @@
+{
+  "run_id": "20260710T210023-v001-baseline-ornith-native-partial",
+  "variant": "v001-baseline",
+  "parent": null,
+  "tasks": 2,
+  "valid_tasks": 1,
+  "solved_tasks": 0,
+  "pass_rate_over_tasks": 0.0,
+  "pass_rate_ci95": [
+    0.0,
+    0.793
+  ],
+  "paired_vs_parent": {
+    "comparable_tasks": 0,
+    "wins": 0,
+    "losses": 0,
+    "ties": 0,
+    "net_tasks": 0,
+    "note": "no parent (baseline variant)"
+  },
+  "by_provenance": {
+    "public-pretrained": {
+      "tasks": 2,
+      "valid_tasks": 1,
+      "solved": 0,
+      "solved_rate": 0.0,
+      "ci95": [
+        0.0,
+        0.793
+      ]
+    }
+  },
+  "cost": {
+    "gpu_seconds": 43.4,
+    "usd": 0.0476,
+    "api_usd": 0.0,
+    "usd_per_solved_task": null,
+    "gpu_attribution": {
+      "per_trial": "tokens_out/908",
+      "ledger": "max(sum, wall)"
+    },
+    "tokens_in": 2783497,
+    "tokens_out": 39429,
+    "trials": 6,
+    "valid_trials": 3,
+    "invalid_trials": 3,
+    "mean_wall_s": 828.0
+  },
+  "per_task": {
+    "astropy__astropy-13453": {
+      "passes": 1,
+      "valid": 3,
+      "invalid": 0,
+      "pass_rate": 0.3333333333333333,
+      "provenance": "public-pretrained"
+    },
+    "django__django-11066": {
+      "passes": 0,
+      "valid": 0,
+      "invalid": 3,
+      "pass_rate": null,
+      "provenance": "public-pretrained"
+    }
+  },
+  "worker_model": "ornith-native",
+  "partial": true
+}

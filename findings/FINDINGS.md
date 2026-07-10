@@ -1740,3 +1740,23 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   fix toward the PRE-REGISTERED intent (vendor-minimal protocol), not tuning:
   it was made after 6 liveness trials, before any full-sweep data, and the
   revision is re-frozen from here.
+
+## 2026-07-10 · P9-E · liveness-2 (run `20260710T210023`): driver runtime bug found & fixed (py3.6 compat)
+- Rev-2 liveness (2 tasks ×3, $0.07): astropy-13453 1/3, django-11066 **0/3
+  invalid (`worker_no_result_line`, turns=0)**. Pulled the trial artifacts:
+  `native_driver.stderr.log` shows `TypeError: __init__() got an unexpected
+  keyword argument 'text'` at the FIRST tool execution — the django testbed
+  conda env is Python 3.6 and `subprocess.run(text=…)` is a 3.7+ alias. The
+  driver crashed under the model before any command ran; the partial
+  transcript shows Ornith behaving correctly on the tools API (clean
+  reasoning, sensible first command). Rev 1 never hit this line on django
+  because the model degenerated before a single fence parsed.
+- **Fix (infra, not protocol):** `text=True` → `universal_newlines=True`
+  (identical semantics, 3.5+). One line in `make_exec_fn`; system prompt,
+  tools schema, loop, caps all byte-identical. Same category as the C1 OOM
+  fixes — the frozen surface is the protocol, not interpreter compat. Unit
+  tests (20) green; a compat scan (no `text=`, `capture_output`, walrus) now
+  guards the file.
+- astropy's rev-2 drop (3/3 → 1/3, two 60-turn `empty_diff` loops) is NOT
+  explained by this bug (astropy's env is newer); judged against liveness-3
+  after the fix. Liveness-3 launched: same 2×3 partial.
