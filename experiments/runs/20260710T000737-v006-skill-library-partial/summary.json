@@ -1,0 +1,80 @@
+{
+  "run_id": "20260710T000737-v006-skill-library-partial",
+  "variant": "v006-skill-library",
+  "parent": "v001-baseline",
+  "tasks": 4,
+  "valid_tasks": 4,
+  "solved_tasks": 2,
+  "pass_rate_over_tasks": 0.5,
+  "pass_rate_ci95": [
+    0.15,
+    0.85
+  ],
+  "paired_vs_parent": {
+    "comparable_tasks": 4,
+    "wins": 2,
+    "losses": 2,
+    "ties": 0,
+    "net_tasks": 0
+  },
+  "by_provenance": {
+    "public-pretrained": {
+      "tasks": 4,
+      "valid_tasks": 4,
+      "solved": 2,
+      "solved_rate": 0.5,
+      "ci95": [
+        0.15,
+        0.85
+      ]
+    }
+  },
+  "cost": {
+    "gpu_seconds": 78.3,
+    "usd": 0.0859,
+    "api_usd": 0.0,
+    "usd_per_solved_task": 0.043,
+    "gpu_attribution": {
+      "per_trial": "tokens_out/908",
+      "ledger": "max(sum, wall)"
+    },
+    "tokens_in": 6673682,
+    "tokens_out": 71105,
+    "trials": 12,
+    "valid_trials": 12,
+    "invalid_trials": 0,
+    "mean_wall_s": 127.9
+  },
+  "per_task": {
+    "astropy__astropy-13453": {
+      "passes": 1,
+      "valid": 3,
+      "invalid": 0,
+      "pass_rate": 0.3333333333333333,
+      "provenance": "public-pretrained"
+    },
+    "django__django-12209": {
+      "passes": 2,
+      "valid": 3,
+      "invalid": 0,
+      "pass_rate": 0.6666666666666666,
+      "provenance": "public-pretrained"
+    },
+    "pytest-dev__pytest-7571": {
+      "passes": 3,
+      "valid": 3,
+      "invalid": 0,
+      "pass_rate": 1.0,
+      "provenance": "public-pretrained"
+    },
+    "scikit-learn__scikit-learn-25931": {
+      "passes": 0,
+      "valid": 3,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    }
+  },
+  "worker_model": "ornith-35b",
+  "partial": true
+}

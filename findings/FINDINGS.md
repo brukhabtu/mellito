@@ -1443,3 +1443,44 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   which is itself an argument for Phase A (skills that make Ornith reliably LAND
   fixes, rather than a crude post-hoc picker). Still holding for operator go on
   the B→A (A0) transition.
+
+## 2026-07-10 · P6-A0 · GATE — invocable-skill mechanism FAILED (0/12), passive shift noted
+- v006-skill-library manipulation check, runs `20260709T235258` (liveness 1x3)
+  + `20260710T000737` (4 anchor tasks x3). $0.11 total. Skills SURFACE
+  correctly: the headless worker's init event lists all three in
+  `slash_commands`, invocable via the SlashCommand tool.
+- **Pre-registered gate FAILED: 0/12 trials invoked any skill; 0 skill-name
+  mentions in any trial's text.** Ornith will not use the on-demand invocation
+  channel even when the skills are surfaced and the CLAUDE.md points at them
+  (`/reproduce-before-editing`). This is the v005 non-adoption pattern for the
+  skill mechanism — consistent with the research finding that Ornith's
+  scaffold-USE was an RL-trained habit for ITS OWN scaffold, not a behavior
+  promptable onto foreign tooling. The distinctive Phase-A bet (model pulls up
+  proven procedures on demand, à la its training) is **falsified** for this
+  model via config alone.
+- **Unexpected, honestly-flagged finding (NOT a gate pass — a new hypothesis):**
+  the skill DESCRIPTIONS injected into context DID passively shift behavior vs
+  v001 on the same 4 tasks: repro-before-edit 4/12 vs 4/20; mean reproduction
+  runs **1.5 vs 0.5** (3x); mean verify runs **1.8 vs 0.4** (4.5x). More than
+  v005's prose produced. BUT the shift did not improve outcomes (v006 solved
+  2/4, net 0 paired vs v001 at n=3) — the familiar behavior-changes/outcomes-
+  don't wall. Testing "always-injected concrete proven procedures improve solve
+  rate" would require a FRESH variant (v007, bodies in CLAUDE.md, no invocation
+  dependency) with its OWN pre-registered gate — it is not covered by A0's.
+- **Convergence (the through-line now across FIVE scaffold/config forms + one
+  weight intervention):** prose contract v002 (+3), mechanical forcing v003
+  (+2), localization prose v004 (0), geometry prose v005 (NO-GO), invocable
+  skills v006/A0 (0/12 invocation). Imitation LoRA (−2). No config/prompt form
+  has moved Ornith's under-action core past the +5 gate, and A0 shows it won't
+  even adopt a new harness affordance. The research explains why: Ornith's
+  operative behaviors were REWARDED in (RL on a self-authored persistent
+  scaffold), not prompted. Only a reward signal (RL) has plausible leverage on
+  the action core; Phase B already established the recoverable headroom RL would
+  target (pass@5 29/40).
+- **Verdict: A0 FAIL → the invocation-based skill-library rung is closed.** The
+  disciplined fork (now with far stronger grounding than the T8 memo had — 5
+  scaffold forms falsified + research-confirmed mechanism + B-confirmed
+  headroom): (1) one cheap last scaffold gasp — v007 always-injected proven
+  procedures, LOW expected value given the convergence and the net-0 outcome
+  here; (2) escalate to C (RL), the lever matched to the diagnosis, ~$80-150 +
+  unproven-arch risk; (3) negative-result write-up. Operator decision point.
