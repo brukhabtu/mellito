@@ -44,7 +44,7 @@ adapters = modal.Volume.from_name("ornith-adapters", create_if_missing=True)
 # trained on Ornith's own verifier-passing trajectories; see FINDINGS
 # 2026-07-08 P4 LoRA. Applied over the FP8 base — attention projection shapes
 # are identical across the FP8/bf16 siblings, so the bf16 delta drops in.
-LORA_ADAPTER = "pref-20260710T033250"
+LORA_ADAPTER = "pref-20260710T120439"
 
 vllm_image = (
     modal.Image.debian_slim(python_version="3.12")
