@@ -1842,3 +1842,25 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   a 3-task ×5 partial re-run (`--tasks`, ~$0.2) with the fixed driver was
   launched to put full-strength trials under them; its outcome annotates
   (not replaces) this run's number.
+
+## 2026-07-10 · P9-E · patch re-run (run `20260710T223635`): 25/40 stands on full evidence — dev-side battery COMPLETE
+- Fixed-driver re-run of the 3 invalid-affected tasks (×5, $0.11, 0 invalid):
+  django-10973 **4/5**, django-11239 **4/5**, django-13023 **4/5** — all
+  three clear the majority bar decisively. The E headline **25/40 stands**,
+  now annotated with full-strength evidence; no number changes.
+- Driver re-frozen after the two py3.6 compat fixes; 0 invalids across the
+  last 21 native trials.
+- **P9 dev-side battery is complete.** Final dev ladder (paired anchor =
+  stock·CC·single 20/40, run 20260707T215242):
+  | arm | solved | paired vs anchor |
+  |---|---|---|
+  | E  · stock · native single | 25/40 | +6/−1 net +5 |
+  | D  · stock · CC wrapped    | 27/40 | +7/−0 net +7 |
+  | C  · tuned · CC wrapped    | 28/40 | +8/−0 net +8 |
+  Drift audit: gains real net of test-edits (adjusted +7 for C). Suspect
+  tasks flagged: pytest-5809, sklearn-13496.
+- **Sole remaining P9 item: holdout confirmation battery** — blocked on the
+  operator staging ≥15 specs into the sealed holdout dir + creating the
+  unlock flag. Arms: stock·CC·single, tuned·CC·wrapped, stock·CC·wrapped
+  (D-trigger met). Criterion: holdout paired delta within 5 of dev's +8.
+  Spend ≈ $60 of $150.
