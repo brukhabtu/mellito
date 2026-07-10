@@ -229,27 +229,34 @@ def pref_loss_from_logits(logits, labels, is_pos, neg_weight, neg_p_clamp=1e-4):
     if logits.dim() != 3:
         raise ValueError(f"expected logits (B,T,V), got {tuple(logits.shape)}")
     b, t, v = logits.shape
-    # Causal shift: position i predicts token i+1. Upcast to fp32 for the loss,
-    # exactly as transformers' own ForCausalLMLoss does (same memory profile P4
-    # proved fits the H200 at 32k seq).
-    shift_logits = logits[:, :-1, :].float()          # (B, T-1, V)
-    shift_labels = labels[:, 1:].contiguous()          # (B, T-1); -100 = non-assistant
-    ce = F.cross_entropy(
-        shift_logits.reshape(-1, v),
-        shift_labels.reshape(-1),
-        ignore_index=-100,
-        reduction="none",
-    ).reshape(b, t - 1)                                 # 0 at ignored positions
-    valid = shift_labels.ne(-100)                       # assistant tokens
-    is_pos = is_pos.to(ce.device).view(-1)
+    # Causal shift: position i predicts token i+1. MEMORY-CRITICAL (learned the
+    # hard way — first C1 run OOM'd at step 17/19 trying to allocate a 23.7GiB
+    # fp32 full-sequence logit copy): select the assistant positions FIRST,
+    # upcast only those to fp32, and compute CE in bounded chunks. transformers'
+    # own loss survives 32k because it is fused/chunked internally; a naive
+    # full-tensor .float() is not. Same math, ~10x lower peak.
+    shift_labels = labels[:, 1:].contiguous()           # (B, T-1); -100 = non-assistant
+    is_pos = is_pos.to(logits.device).view(-1)
+    chunk = 2048                                        # bounded fp32 transient per step
 
     rows = []
     for i in range(b):
-        m = valid[i]
-        if int(m.sum()) == 0:
-            rows.append(ce.new_zeros(()))               # no assistant tokens -> 0
+        lab_i = shift_labels[i]
+        m_i = lab_i.ne(-100)
+        if int(m_i.sum()) == 0:
+            rows.append(logits.new_zeros(()))            # no assistant tokens -> 0
             continue
-        ce_i = ce[i][m]                                 # (n,) = −log p(true tok)
+        ce_parts = []
+        for s in range(0, t - 1, chunk):
+            e = min(s + chunk, t - 1)
+            m_c = m_i[s:e]
+            if not bool(m_c.any()):
+                continue
+            # fp32 only for the ASSISTANT positions of this chunk (n_c, V)
+            lg_c = logits[i, s:e, :][m_c].float()
+            ce_parts.append(F.cross_entropy(lg_c, lab_i[s:e][m_c],
+                                            reduction="none"))
+        ce_i = torch.cat(ce_parts)                       # (n,) = −log p(true tok)
         if bool(is_pos[i] > 0.5):
             rows.append(ce_i.mean())                     # positive: token CE
         else:
