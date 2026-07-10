@@ -1,0 +1,59 @@
+{
+  "run_id": "20260709T235258-v006-skill-library-partial",
+  "variant": "v006-skill-library",
+  "parent": "v001-baseline",
+  "tasks": 1,
+  "valid_tasks": 1,
+  "solved_tasks": 1,
+  "pass_rate_over_tasks": 1.0,
+  "pass_rate_ci95": [
+    0.207,
+    1.0
+  ],
+  "paired_vs_parent": {
+    "comparable_tasks": 1,
+    "wins": 0,
+    "losses": 0,
+    "ties": 1,
+    "net_tasks": 0
+  },
+  "by_provenance": {
+    "public-pretrained": {
+      "tasks": 1,
+      "valid_tasks": 1,
+      "solved": 1,
+      "solved_rate": 1.0,
+      "ci95": [
+        0.207,
+        1.0
+      ]
+    }
+  },
+  "cost": {
+    "gpu_seconds": 26.5,
+    "usd": 0.0291,
+    "api_usd": 0.0,
+    "usd_per_solved_task": 0.0291,
+    "gpu_attribution": {
+      "per_trial": "tokens_out/908",
+      "ledger": "max(sum, wall)"
+    },
+    "tokens_in": 4388660,
+    "tokens_out": 24081,
+    "trials": 3,
+    "valid_trials": 3,
+    "invalid_trials": 0,
+    "mean_wall_s": 135.7
+  },
+  "per_task": {
+    "astropy__astropy-13453": {
+      "passes": 2,
+      "valid": 3,
+      "invalid": 0,
+      "pass_rate": 0.6666666666666666,
+      "provenance": "public-pretrained"
+    }
+  },
+  "worker_model": "ornith-35b",
+  "partial": true
+}
