@@ -621,12 +621,66 @@ def train_pref(pref_path_in_image="/data/pref.jsonl", epochs=1, lr=5e-5,
             # ignored: our objective is normalised per-row (mean over each row's
             # assistant tokens) + class-balanced via neg_weight, so a global token
             # count would double-normalise.
+            #
+            # MEMORY-CRITICAL (second C1 OOM, identical 23.68GiB alloc): calling
+            # model(**inputs) runs the CausalLM head, which materialises (and
+            # fp32-upcasts) the FULL-SEQUENCE logits (~32k x ~196k vocab). The
+            # labels-fused path transformers uses for plain SFT never does this,
+            # but we need per-token CE for the unlikelihood term. So: run the
+            # DECODER only for hidden states, then project->CE per assistant-
+            # position chunk under torch checkpointing — full logits never exist.
+            import torch
+            import torch.nn.functional as F
+            from torch.utils.checkpoint import checkpoint
+
             pref_is_pos = inputs.pop("pref_is_pos")
             labels = inputs.pop("labels")
-            outputs = model(**inputs)     # no labels -> model computes no loss
-            loss = pref_loss_from_logits(outputs.logits, labels, pref_is_pos,
-                                         self.neg_weight, self.neg_p_clamp)
-            return (loss, outputs) if return_outputs else loss
+
+            # Unwrap PEFT to reach the decoder + head; LoRA modules live inside
+            # the decoder layers, so calling the decoder still routes through
+            # (and trains) the adapters.
+            m = model
+            while hasattr(m, "get_base_model"):
+                m = m.get_base_model()
+            dec = m.get_decoder() if hasattr(m, "get_decoder") else m.model
+            head_w = m.get_output_embeddings().weight        # frozen (V, H)
+
+            out = dec(input_ids=inputs["input_ids"],
+                      attention_mask=inputs.get("attention_mask"),
+                      use_cache=False)
+            hidden = out[0] if isinstance(out, tuple) else out.last_hidden_state
+            b = hidden.shape[0]
+            shift_labels = labels[:, 1:]
+            chunk = 2048
+
+            def _chunk_ce(h_c, lab_c):
+                # recomputed in backward (checkpoint) so the (n_c, V) logits are
+                # never retained in the autograd graph
+                lg = F.linear(h_c, head_w).float()
+                return F.cross_entropy(lg, lab_c, reduction="none")
+
+            rows = []
+            for i in range(b):
+                lab_i = shift_labels[i]
+                m_i = lab_i.ne(-100)
+                if int(m_i.sum()) == 0:
+                    rows.append(hidden.new_zeros(()))
+                    continue
+                h_i = hidden[i, :-1, :][m_i]                 # (n, H) assistant only
+                lab_v = lab_i[m_i]
+                ce_parts = []
+                for s in range(0, h_i.shape[0], chunk):
+                    ce_parts.append(checkpoint(
+                        _chunk_ce, h_i[s:s + chunk], lab_v[s:s + chunk],
+                        use_reentrant=False))
+                ce_i = torch.cat(ce_parts)
+                if bool(pref_is_pos[i] > 0.5):
+                    rows.append(ce_i.mean())
+                else:
+                    p = torch.exp(-ce_i).clamp(max=1.0 - self.neg_p_clamp)
+                    rows.append(self.neg_weight * (-torch.log1p(-p)).mean())
+            loss = torch.stack(rows).mean()
+            return (loss, out) if return_outputs else loss
 
     sft_config = SFTConfig(
         assistant_only_loss=True,          # reads the {% generation %} markers
