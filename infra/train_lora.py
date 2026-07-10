@@ -193,7 +193,8 @@ def preflight_template(samples):
     # that covers <think>+text+tool_call and excludes tool_response/system/user.
     # The gate here re-asserts that byte-identity against the live model template,
     # so a silent upstream template change is caught before any GPU spend.
-    if cta.has_generation_markers(stock):
+    had_markers = cta.has_generation_markers(stock)
+    if had_markers:
         patched = stock
         print("[preflight] stock template already has generation markers")
     else:
