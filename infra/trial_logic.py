@@ -253,6 +253,62 @@ def accumulate_usage(acc: dict, usage: dict) -> dict:
     return acc
 
 
+# --- P9-E native minimal loop: transcript readback ------------------------
+#
+# native_driver.py (the CONTROL-arm driver) writes a JSONL transcript inside the
+# sandbox: one {"role","content", ...} row per message, then a final
+# {"type":"native_result","turns":N,"ended":...,"usage_total":{...}} row.
+# run_trial pulls that text back out and needs the token/turn totals for
+# accounting (gpu_seconds is derived from tokens_out as for the Claude worker).
+# This parse is pure, so it lives here with a test rather than in the driver
+# (which run_trial does not import at call time).
+
+
+def parse_native_transcript(lines_or_text) -> dict:
+    """Token/turn totals from a native_driver transcript (str or list of lines).
+
+    Prefers the terminal `native_result` row's `usage_total`/`turns`/`ended`;
+    if that row is absent (a driver that died before writing it), falls back to
+    summing the per-assistant `usage` rows and reports found_result=False so the
+    caller can treat a resultless native run as an execution error, not a fail.
+    """
+    if isinstance(lines_or_text, str):
+        lines = lines_or_text.splitlines()
+    else:
+        lines = lines_or_text or []
+    result = None
+    tokens_in = tokens_out = 0
+    for line in lines:
+        line = (line or "").strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("type") == "native_result":
+            result = obj  # keep scanning; the last one wins
+        elif obj.get("role") == "assistant":
+            u = obj.get("usage") or {}
+            tokens_in += int(u.get("prompt_tokens") or 0)
+            tokens_out += int(u.get("completion_tokens") or 0)
+    if result is not None:
+        ut = result.get("usage_total") or {}
+        return {
+            "found_result": True,
+            "num_turns": int(result.get("turns") or 0),
+            "ended": str(result.get("ended") or ""),
+            "tokens_in": int(ut.get("tokens_in") or tokens_in),
+            "tokens_out": int(ut.get("tokens_out") or tokens_out),
+        }
+    return {
+        "found_result": False, "num_turns": 0, "ended": "",
+        "tokens_in": int(tokens_in), "tokens_out": int(tokens_out),
+    }
+
+
 def node_claude_install_cmds() -> list[str]:
     """`run_commands` to layer Node 22 + the pinned Claude Code CLI onto a task
     image. Task images are Ubuntu 22.04 running as root with no Node; curl/ca

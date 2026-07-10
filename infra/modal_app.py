@@ -465,7 +465,12 @@ harness_image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("pyyaml")
     .add_local_python_source(
-        "trial_logic", "selection_analysis", "export_trajectories", "sweep_stats"
+        "trial_logic", "selection_analysis", "export_trajectories", "sweep_stats",
+        # P9-E: run_trial ships native_driver.py's source into the sandbox for
+        # the native control worker (it is executed there, not imported here at
+        # call time — but it must travel with the harness closure). Stdlib-only,
+        # so importing it in the harness image is side-effect-free.
+        "native_driver",
     )
 )
 
@@ -575,12 +580,21 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             raise RuntimeError(
                 f"variant config contains {m.name!r} — refusing (oracle leak guard)")
 
-    # The worker authenticates to the in-app proxy with PROXY_MASTER_KEY (from
-    # run_trial's own secret env); fill it into the worker before building the
-    # exec env. (Hosted workers and their separate Anthropic-key secret were
-    # removed 2026-07-09 — every worker is proxy-routed now.)
-    worker = {**worker, "api_key": os.environ["PROXY_MASTER_KEY"]}
-    exec_env = tl.worker_env(worker)
+    # P9-E native control worker: no Claude Code, no proxy — a self-contained
+    # text REPL driver talks OpenAI chat-completions direct to serve(). It is
+    # single-session by design (the control is one session), so attempts MUST be
+    # 1; the proxy key and Claude env are not built on this path.
+    native = bool(worker.get("native"))
+    exec_env = None
+    if native:
+        assert attempts == 1, "ornith-native is single-session by design (P9-E control)"
+    else:
+        # The worker authenticates to the in-app proxy with PROXY_MASTER_KEY
+        # (from run_trial's own secret env); fill it into the worker before
+        # building the exec env. (Hosted workers and their separate Anthropic-key
+        # secret were removed 2026-07-09 — every worker is proxy-routed now.)
+        worker = {**worker, "api_key": os.environ["PROXY_MASTER_KEY"]}
+        exec_env = tl.worker_env(worker)
 
     worker_img = modal.Image.from_registry(task_spec["image"]).run_commands(
         *tl.node_claude_install_cmds())
@@ -672,6 +686,74 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
     # --- Phase A: up to `attempts` sequential sessions in ONE sandbox ---------
     sb = None
     try:
+      if native:
+        # P9-E native control Phase A: ONE session, no variant scaffold, no
+        # Claude Code. Create the sandbox, resolve base_sha (Phase B diffs it),
+        # write VERIFY.txt + TASK.md (both excluded from the worker diff, same as
+        # the Claude path), upload the frozen driver to /native_driver.py (OUTSIDE
+        # /testbed, so it never enters the diff), and run it. The driver owns its
+        # own per-command timeout and session wall-clock (NATIVE_TIMEOUT_S).
+        try:
+            sb = _create_sandbox(app_handle, image=worker_img,
+                                 timeout=timeout_s + 600, workdir="/testbed",
+                                 cpu=2)
+        except Exception as e:
+            return _result(
+                tl.classify("worker_sandbox_create_failed", "exhausted"),
+                "worker_sandbox_create_failed",
+                error=f"sandbox create failed: {e}")
+        sha_proc = sb.exec("git", "rev-parse", "HEAD", workdir="/testbed")
+        base_sha = sha_proc.stdout.read().strip()
+        if sha_proc.wait() != 0 or not base_sha:
+            return _result(tl.classify("base_sha_unresolved"),
+                           "base_sha_unresolved", usage=acc,
+                           error="git rev-parse HEAD failed or empty")
+        _sb_write(sb, "/testbed/VERIFY.txt", task_spec["verify"])
+        _sb_write(sb, "/testbed/TASK.md", description)
+        import native_driver as _nd  # in-container via add_local_python_source
+        _sb_write(sb, "/native_driver.py", Path(_nd.__file__).read_text())
+        native_env = {
+            "NATIVE_BASE_URL": worker["base_url"],
+            "NATIVE_API_KEY": os.environ["VLLM_API_KEY"],
+            "NATIVE_MODEL": worker.get("model") or "ornith-35b",
+            "NATIVE_TIMEOUT_S": str(timeout_s),
+            "NATIVE_TRANSCRIPT": "/tmp/native_transcript.jsonl",
+            "NATIVE_TASK_FILE": "/testbed/TASK.md",
+        }
+        nproc = sb.exec("bash", "-lc",
+                        "exec python3 /native_driver.py < /dev/null",
+                        env=native_env, timeout=timeout_s + 300, workdir="/testbed")
+        driver_out = nproc.stdout.read()
+        nrc = nproc.wait()
+        try:
+            (out_dir / "native_driver.stdout.log").write_text((driver_out or "")[-8000:])
+            (out_dir / "native_driver.stderr.log").write_text(
+                (nproc.stderr.read() or "")[-4000:])
+        except Exception:
+            pass
+        # Pull the driver-written transcript out of the sandbox to the run dir
+        # (same path the Claude worker's transcript uses).
+        native_text = ""
+        try:
+            with sb.open("/tmp/native_transcript.jsonl", "r") as f:
+                native_text = f.read()
+        except Exception:
+            native_text = ""
+        transcript_path.write_text(native_text)
+        nu = tl.parse_native_transcript(native_text)
+        # No terminating native_result row => the driver died before finishing
+        # (our harness fault) — an execution error, never a 'fail'.
+        if not nu["found_result"]:
+            return _result(tl.classify("worker_no_result_line", "exhausted"),
+                           "worker_no_result_line", usage=acc,
+                           error=f"native driver wrote no result line (rc={nrc})")
+        tl.accumulate_usage(acc, {"tokens_in": nu["tokens_in"],
+                                  "tokens_out": nu["tokens_out"],
+                                  "num_turns": nu["num_turns"]})
+        n_attempts_run = 1
+        stop_reason = f"native_{nu['ended']}" if nu["ended"] else "native"
+        timed_out = (nu["ended"] == "timeout")
+      else:
         # Attempt 1: fresh sandbox + scaffold, with the historic single
         # recreate-retry on an abnormal (no-result, non-timeout) worker death.
         # That retry RECREATES the sandbox — legitimate ONLY here, before any
@@ -766,22 +848,25 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
                     if stop:
                         break
 
-        # Capture the worker's change on the FINAL workspace, excluding harness
-        # scaffolding. Runs ONCE, after the loop — Phase B verdicts this state.
-        arc = sb.exec("git", "add", "-A", "--",
-                      ":(exclude).claude", ":(exclude)VERIFY.txt",
-                      ":(exclude)TASK.md", workdir="/testbed").wait()
-        if arc != 0:
-            return _result(tl.classify("worker_diff_stage_failed"),
-                           "worker_diff_stage_failed", usage=acc,
-                           timed_out=timed_out, error=f"git add exit {arc}")
-        # Binary-safe: text-mode streams decode UTF-8 strict and would raise on
-        # a binary diff hunk. Read bytes; _sb_write/write_bytes handle them.
-        dproc = sb.exec("git", "diff", "--binary", "--cached", base_sha,
-                        workdir="/testbed", text=False)
-        worker_diff = dproc.stdout.read()
-        dproc.wait()
-        (out_dir / "worker.diff").write_bytes(worker_diff)
+      # Capture the worker's change on the FINAL workspace, excluding harness
+      # scaffolding. SHARED by both the native and Claude paths — runs ONCE,
+      # after Phase A; Phase B verdicts this state. The exclusions cover the
+      # files either path writes (.claude only exists on the Claude path;
+      # excluding it on the native path is a harmless no-op).
+      arc = sb.exec("git", "add", "-A", "--",
+                    ":(exclude).claude", ":(exclude)VERIFY.txt",
+                    ":(exclude)TASK.md", workdir="/testbed").wait()
+      if arc != 0:
+          return _result(tl.classify("worker_diff_stage_failed"),
+                         "worker_diff_stage_failed", usage=acc,
+                         timed_out=timed_out, error=f"git add exit {arc}")
+      # Binary-safe: text-mode streams decode UTF-8 strict and would raise on
+      # a binary diff hunk. Read bytes; _sb_write/write_bytes handle them.
+      dproc = sb.exec("git", "diff", "--binary", "--cached", base_sha,
+                      workdir="/testbed", text=False)
+      worker_diff = dproc.stdout.read()
+      dproc.wait()
+      (out_dir / "worker.diff").write_bytes(worker_diff)
     finally:
         if sb is not None:
             try:
@@ -933,10 +1018,17 @@ def _make_worker(worker_model: str) -> dict:
         return {"model": worker_model, "small_model": worker_model,
                 "base_url": _proxy_url(), "api_key": None,
                 "gpu_attributed": True}
+    # P9-E native control: stock Ornith via the mini-SWE-agent driver, which
+    # talks OpenAI chat-completions DIRECT to serve() (NOT the Anthropic proxy —
+    # that schema is Claude-Code-only). run_trial fills VLLM_API_KEY from its own
+    # secret env; here we only pin the direct serve() URL and the native flag.
+    if worker_model == "ornith-native":
+        return {"model": "ornith-35b", "base_url": _serve_url(),
+                "native": True, "gpu_attributed": True}
     raise SystemExit(
         f"unknown worker_model {worker_model!r}: hosted reference workers were "
-        "removed (operator redirect 2026-07-09); use 'ornith-35b' or "
-        "'ornith-lora'")
+        "removed (operator redirect 2026-07-09); use 'ornith-35b', "
+        "'ornith-lora', or 'ornith-native'")
 
 
 def _probe_proxy(url: str) -> None:
@@ -959,8 +1051,11 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
     file exists, as defense in depth.
 
     worker_model selects the served model: 'ornith-35b' (the base) or
-    'ornith-lora' (the P4 adapter); both run on the in-app vLLM+proxy stack,
-    GPU-budget-gated. Hosted reference workers were removed 2026-07-09.
+    'ornith-lora' (the P4 adapter), both via the in-app vLLM+proxy stack; or
+    'ornith-native' (P9-E control) — stock Ornith run through the native
+    minimal-loop driver DIRECT against serve() (no Claude Code, no proxy),
+    single-session by design (attempts must be 1). All are GPU-budget-gated.
+    Hosted reference workers were removed 2026-07-09.
     tasks: optional comma-separated task-id filter (partial run).
     attempts: P8 native-loop wrapper — up to N sequential Claude Code sessions
     per trial in ONE persistent sandbox, early-stopping on the worker's own
@@ -977,6 +1072,10 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
         raise SystemExit("trials < 3: paired stats need >=3 (PLAN decision rules)")
     if not 1 <= attempts <= 5:
         raise SystemExit("attempts must be in [1, 5] (P8 uses 3)")
+    # P9-E native control is single-session BY DESIGN (frozen); the attempts
+    # wrapper is a Claude-Code-only mechanism.
+    if worker_model == "ornith-native" and attempts != 1:
+        raise SystemExit("ornith-native is single-session by design; use attempts=1")
 
     variant_dir = root / "experiments" / "variants" / variant
     manifest = variant_dir / "manifest.yaml"
@@ -985,7 +1084,11 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
     import yaml
     parent = yaml.safe_load(manifest.read_text()).get("parent")
 
-    is_ornith = worker_model in ("ornith-35b", "ornith-lora")
+    # is_ornith gates the endpoint health-wait and the wall-clock ledger charge:
+    # ornith-native is GPU-attributed on the SAME vLLM fleet (it hits serve()
+    # directly), so it is ledger-equivalent to the base/LoRA arms — but recorded
+    # in the summary and run_id as its own worker so it is never mistaken for one.
+    is_ornith = worker_model in ("ornith-35b", "ornith-lora", "ornith-native")
 
     # glob yields the task.yaml FILES; _load_spec wants the task DIRECTORY.
     task_dirs = sorted(p.parent for p in (root / "tasks" / split).glob("*/task.yaml"))
@@ -1011,7 +1114,13 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
     worker = _make_worker(worker_model)  # rejects unknown worker models
 
     ts = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
-    run_id = f"{ts}-{variant}" if is_ornith else f"{ts}-{variant}-{_slug(worker_model)}"
+    # The base and LoRA arms keep the historic suffix-free run_id (worker is
+    # recorded in the summary). ornith-native gets an explicit -ornith-native
+    # suffix so its run dir is never confused with a base/LoRA run at a glance.
+    if worker_model in ("ornith-35b", "ornith-lora"):
+        run_id = f"{ts}-{variant}"
+    else:
+        run_id = f"{ts}-{variant}-{_slug(worker_model)}"
     if partial:
         run_id += "-partial"
 
@@ -1021,10 +1130,14 @@ def run_sweep(variant: str, trials: int = 5, split: str = "dev",
 
     if is_ornith:
         _wait_healthy(_serve_url())
-        try:
-            _probe_proxy(_proxy_url())
-        except Exception as e:  # best-effort; the per-trial calls will surface it
-            print(f"[sweep] proxy health probe failed (continuing): {e}")
+        # The native control talks to serve() directly; it never touches the
+        # Anthropic proxy, so skip the proxy probe for it (the proxy may not even
+        # be deployed for an E-only run, and _proxy_url would then hard-exit).
+        if worker_model != "ornith-native":
+            try:
+                _probe_proxy(_proxy_url())
+            except Exception as e:  # best-effort; per-trial calls will surface it
+                print(f"[sweep] proxy health probe failed (continuing): {e}")
 
     work = [(spec, cfg_tar, t, run_id, worker, attempts)
             for spec in specs for t in range(trials)]
@@ -1109,9 +1222,11 @@ def run_one(task_id: str, variant: str = "v001-baseline",
     if not spec.get("hidden_tests_content"):
         raise SystemExit(f"task missing hidden_tests_content: {task_id}")
 
+    if worker_model == "ornith-native" and attempts != 1:
+        raise SystemExit("ornith-native is single-session by design; use attempts=1")
     cfg_tar = _tar_config(variant_dir)
     worker = _make_worker(worker_model)
-    if worker_model in ("ornith-35b", "ornith-lora"):
+    if worker_model in ("ornith-35b", "ornith-lora", "ornith-native"):
         _wait_healthy(_serve_url())
     ts = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
     result = run_trial.remote(spec, cfg_tar, 0, f"one-{ts}-{task_id}", worker,
