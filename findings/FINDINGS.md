@@ -1484,3 +1484,34 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   procedures, LOW expected value given the convergence and the net-0 outcome
   here; (2) escalate to C (RL), the lever matched to the diagnosis, ~$80-150 +
   unproven-arch risk; (3) negative-result write-up. Operator decision point.
+
+## 2026-07-10 · P7-C0 · PRE-REGISTRATION (offline preference-tuning rung, C1 gate)
+- Committed BEFORE the converter/trainer run (integrity guard). Context: five
+  prompt/config forms + imitation SFT all failed the under-action core; the RL
+  hypothesis — a NEGATIVE gradient on failing trajectories moves what imitation
+  couldn't — is tested OFFLINE first, on the 400 in-repo verdicted trajectories
+  (v001 93p/106f/1i; recapture 127p/67f/6i), for ~$15-25 total.
+- **Data rule (per the harness: amendment 5f4e9e7):** POSITIVES = verifier-pass
+  AND test-edit-clean (worker.diff touches no tests/ or test_*.py / *_test.py
+  path) — expected ~158. NEGATIVES = fails excluding invalids — expected ~173,
+  including the 60 empty_diff under-action fails (the exact target). Invalids
+  excluded entirely. Labels from trials.jsonl verdicts (oracle; training data,
+  so oracle use is legal; dev only, holdout untouched).
+- **Method:** rank-32 attention-only bf16 LoRA (router/mixer excluded, the
+  proven P4 recipe) trained with a preference objective — KTO if the pinned TRL
+  supports assistant-token masking on our {% generation %} template, else the
+  pre-approved fallback: weighted-CE unlikelihood on the PROVEN SFTTrainer
+  machinery (positives CE, negatives negative-weighted CE, small lambda). CPU
+  pre-flight must be green (mask spans exact on BOTH labels) before any H200.
+- **Pre-committed C1 gate** (dev 40x5, v001-baseline scaffold, worker=new
+  adapter, paired vs base arm run 20260707T215242-v001-baseline):
+  - **KEEP** if net >= +5 paired -> operator + holdout staging.
+  - **ESCALATE to C2** (iterated online loop, <=3 iters, ~$20-25/iter) if net
+    +2..+4 AND the corrected no-source-edit count drops >=30% vs the base arm's
+    (54/200 raw; corrected count computed identically on both arms).
+  - **KILL Phase C** if net <= +1 OR under-action mass unmoved -> negative-
+    result write-up. No re-litigation; borderline goes to the write-up.
+- Model-assignment workflow (operator-directed): Fable orchestrates/gates/
+  commits only; Opus = trainer design+authoring, verdict memo, code review;
+  Sonnet = converter+tests, pre-flight, sweep, stats; Haiku = job babysitting,
+  smoke, pulls. Budget: ~$27 spent of $150; C0 ~$0, C1 ~$15-25.
