@@ -1774,3 +1774,25 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   40×5, ~$3) queued to launch after the D sweep completes** — both arms share
   one serve() GPU and concurrent load would inflate wall-clock on D, a
   measurement cell.
+
+## 2026-07-10 · P9 · drift audit (runs `20260710T154237` vs `20260707T215242`): +8 gain is real net of test-edits; one suspect task flagged
+- Pre-registered analysis-only audit; full report committed at
+  `findings/drift-audit-20260710T154237.md` (predicate = verbatim
+  `export_preferences.is_test_path`; 130 + 93 passing worker.diffs audited,
+  0 missing).
+- **Test-touch rate among passes is flat: stock 33.3% vs tuned+wrapped 30.8%**
+  (genuine existing-test edits 21.5% vs 23.8%). The tuning + wrapper did NOT
+  make the worker more prone to verifier-gaming via test edits.
+- Tainted-only solved tasks (every passing trial touches an existing suite
+  test file): 3/20 stock, 4/28 tuned+wrapped (~15% both). **Adjusted solved:
+  20→17 vs 28→24 — the paired headline delta +8 adjusts to +7, still above
+  the ≥+5 gate.** Gate conclusions unchanged.
+- Definition note: "solved" = majority of valid trials (`sweep_stats._solved`,
+  >0.5), as documented — both arms and all paired gates use it identically.
+  An "any-pass" description in the audit brief was wrong; recorded here so
+  the report's §0 isn't misread as a harness bug.
+- **Suspect task: `pytest-dev__pytest-5809`** — tainted-only in BOTH runs,
+  all 5/5 passing trials each time, always via `testing/test_pastebin.py`.
+  Path-level audit can't distinguish weakened-assertion from
+  legitimately-coupled edit; flagged for content review and for holdout
+  interpretation. No other task repeats across runs.
