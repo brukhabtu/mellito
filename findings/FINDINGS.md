@@ -1580,3 +1580,34 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   Next per plan: **C2 iteration 1** — export fresh preferences from the tuned
   model's own run (20260710T041647: 111 pass / 84 fail, thinking-complete),
   retrain, hot-swap, re-gate. Same three-way gate, stop on Δ<+2 plateau.
+
+## 2026-07-10 · P7-C2 · iteration 1 — PLATEAU, loop stopped (pre-registered rule)
+- Iter-1: fresh on-policy preferences from the tuned model's own run (124 rows:
+  58 clean pos / 66 neg; 41/111 passes excluded as test-edit-tainted — UP from
+  24% pre-tuning to 37%, a gaming-adjacent drift now on the watch list). Fresh
+  LoRA from base (adapter `pref-20260710T120439`, 48/48 after length filter).
+  Smoke PASS. Sweep run `20260710T124151-v001-baseline` ($1.37): 23/40, 114
+  passing trials, empty_diff 24.
+- **Gate: paired vs base net +3 (+7/−4/=29) — identical net to iter-0; paired
+  vs iter-0 net 0 (+3/−3/=34). Δ = 0 < +2 → PLATEAU; C2 stops at 1 iteration**
+  (pre-registered stop, FINDINGS 639de83-lineage). The under-action fix HOLDS
+  (empty_diff 54→22→24; corrected metric validated at C1) but does not
+  compound: offline preference extraction is saturated on this distribution.
+- **Selection-layer check (free, selection_analysis on run 20260710T041647):
+  tuned majority 23 = tuned selected 23 — the crude selector adds NOTHING
+  post-tuning** (it used to add +6 on base). Preference tuning consolidated
+  precisely the flip-candidates selection exploited; the two interventions
+  overlapped rather than stacked. Signal precision unchanged (0.70).
+  **Ceiling rose: tuned pass@5 = 31/40** (base 29) — 8 tasks remain
+  reachable-but-unreliable.
+- **P7 final standing:** weights-only net +3 vs the +5 KEEP bar. Real,
+  replicated mechanism win (first and only intervention to move under-action;
+  held across two independent trainings) — but below the project gate.
+- **Fork (operator decision, per plan):** (a) **C3 full GRPO** — the plan's
+  explicit condition ("only if C2 shows learning-but-plateau") is literally
+  met; ~$80–150 ≈ the remaining budget; targets the 8-task pass@5 headroom
+  with true on-policy credit assignment. (b) **Write-up now** — strongest
+  honest story available: mechanism moved, plateau documented, headroom
+  quantified. (c) smarter selection layer — B2 showed the selector noise is
+  structural (base-vs-hidden test gap); low expected value. Budget:
+  ~$32 ledgered + ~$14 unledgered training ≈ $46 of $150.
