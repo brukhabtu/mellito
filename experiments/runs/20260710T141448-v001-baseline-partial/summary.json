@@ -1,0 +1,67 @@
+{
+  "run_id": "20260710T141448-v001-baseline-partial",
+  "variant": "v001-baseline",
+  "parent": null,
+  "tasks": 2,
+  "valid_tasks": 2,
+  "solved_tasks": 0,
+  "pass_rate_over_tasks": 0.0,
+  "pass_rate_ci95": [
+    0.0,
+    0.658
+  ],
+  "paired_vs_parent": {
+    "comparable_tasks": 0,
+    "wins": 0,
+    "losses": 0,
+    "ties": 0,
+    "net_tasks": 0,
+    "note": "no parent (baseline variant)"
+  },
+  "by_provenance": {
+    "public-pretrained": {
+      "tasks": 2,
+      "valid_tasks": 2,
+      "solved": 0,
+      "solved_rate": 0.0,
+      "ci95": [
+        0.0,
+        0.658
+      ]
+    }
+  },
+  "cost": {
+    "gpu_seconds": 194.6,
+    "usd": 0.2135,
+    "api_usd": 0.0,
+    "usd_per_solved_task": null,
+    "gpu_attribution": {
+      "per_trial": "tokens_out/908",
+      "ledger": "max(sum, wall)"
+    },
+    "tokens_in": 6442492,
+    "tokens_out": 176655,
+    "trials": 6,
+    "valid_trials": 6,
+    "invalid_trials": 0,
+    "mean_wall_s": 400.7
+  },
+  "per_task": {
+    "django__django-12193": {
+      "passes": 0,
+      "valid": 3,
+      "invalid": 0,
+      "pass_rate": 0.0,
+      "provenance": "public-pretrained"
+    },
+    "pytest-dev__pytest-10051": {
+      "passes": 1,
+      "valid": 3,
+      "invalid": 0,
+      "pass_rate": 0.3333333333333333,
+      "provenance": "public-pretrained"
+    }
+  },
+  "worker_model": "ornith-lora",
+  "partial": true
+}
