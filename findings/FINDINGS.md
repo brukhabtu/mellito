@@ -1547,3 +1547,36 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   time (~68 pos / 86 neg trained).
 - Next: C1.1 training (1×H200, ~2-4h, ~$10-20), then smoke → dev 40×5 →
   the pre-registered three-way gate (639de83).
+
+## 2026-07-10 · P7-C1 · GATE — ESCALATE (first intervention to move the under-action core)
+- Training (attempt 4 after two OOMs — both memory bugs, both fixed in commits
+  dade75a/2659adc-lineage; ~$9 total H200 across attempts): adapter
+  `pref-20260710T033250`, weighted-CE unlikelihood, 60 pos / 85 neg (13
+  over-length filtered by the now-working length filter), 1 epoch, stable
+  grad norms. Smoke re-gate PASS (20/20, 0 think-leaks, schema-clean).
+- **Dev sweep** run `20260710T041647-v001-baseline` (v001 scaffold, worker=
+  ornith-lora/pref adapter, 40×5, $1.83): **solved 23/40 (57.5%), 111/200
+  passing trials.** Paired vs base arm `20260707T215242-v001-baseline`
+  (20/40, 93 passing trials): **+4 / −1 / =35, net +3.**
+- **Pre-registered gate (639de83): ESCALATE to C2.** KEEP (≥+5) not met;
+  ESCALATE conditions both met: net +3 ∈ [+2,+4] AND corrected no-source-edit
+  count (identical rule both arms, scratch excluded, missing-diff counted)
+  **60/107 → 31/89 non-pass trials = −48.3%** (bar ≥30%). Raw empty_diff
+  54 → 22 (−59%). KILL (≤+1) not met.
+- **Why this is the project's first mechanism-level positive:** every prior
+  intervention left under-action untouched (v002 +3 prose with empty_diff 31;
+  v003 hard gate, 25; v004 0; v005 NO-GO; v006 0/12 invocation; imitation
+  SFT −2 with a REGRESSION to empty_diff). The negative gradient on failing
+  trajectories — the one lever the RL hypothesis said was missing — cut the
+  under-action mass nearly in half ON THE SAME MINIMAL SCAFFOLD and converted
+  it into +18 passing trials. Wins are pass-rate consolidation on the exact
+  flip-candidate tasks B identified (pytest-7571 0.2→0.8, django-11239
+  0.4→1.0, sklearn-13496 0.4→1.0, astropy-12907 0.4→0.8; one loss
+  astropy-13453 0.6→0.4). This is the B-predicted pass@1→pass@5 gap closing.
+- Watch item: invalids 1 → 5 (all worker_reported_error/"success" — the known
+  SDK-stall flavor, excluded from both arms' stats; if it grows in C2 it needs
+  its own investigation before iteration continues).
+- Budget: $28.38/$150 ledgered (+~$12 unledgered training H200 across P7).
+  Next per plan: **C2 iteration 1** — export fresh preferences from the tuned
+  model's own run (20260710T041647: 111 pass / 84 fail, thinking-complete),
+  retrain, hot-swap, re-gate. Same three-way gate, stop on Δ<+2 plateau.
