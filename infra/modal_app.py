@@ -723,8 +723,13 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
         import native_driver as _nd  # in-container via add_local_python_source
         _sb_write(sb, "/native_driver.py", Path(_nd.__file__).read_text())
         # Base driver env, shared across the per-attempt sessions in this ONE
-        # sandbox. NATIVE_TASK (set per attempt below) is preferred by the driver
-        # over NATIVE_TASK_FILE; the file stays pointed at the base TASK.md.
+        # sandbox. The per-attempt prompt is delivered as a FILE (NATIVE_TASK_FILE
+        # override below), NEVER via a NATIVE_TASK env var: on testbeds with no
+        # UTF-8 locale the sandbox python reads env bytes with surrogateescape, so
+        # any non-ASCII in the description (e.g. the U+200B in django-11066)
+        # reaches the chat body as lone surrogates and vLLM 400s every call
+        # (P9-F proof-of-one, runs one-20260710T2355*). Files are read by the
+        # driver with explicit utf-8, which the E runs already proved clean.
         native_base_env = {
             "NATIVE_BASE_URL": worker["base_url"],
             "NATIVE_API_KEY": os.environ["VLLM_API_KEY"],
@@ -742,11 +747,19 @@ def run_trial(task_spec: dict, variant_config_tar: bytes, trial_idx: int,
             sandbox_tpath = f"/tmp/native_transcript.attempt{k}.jsonl"
             local_tpath = (transcript_path if k == 1
                            else out_dir / f"transcript.attempt{k}.jsonl")
+            task_env = {"NATIVE_TRANSCRIPT": sandbox_tpath}
+            if attempts > 1:
+                # Per-attempt prompt file, /tmp so it never enters the diff;
+                # utf-8 bytes end-to-end. attempts==1 keeps the pristine
+                # single-shot env (base TASK.md), byte-identical to P9-E.
+                task_file = f"/tmp/native_task.attempt{k}.md"
+                _sb_write(sb, task_file,
+                          tl.build_attempt_prompt(description, k, attempts)
+                          .encode("utf-8"))
+                task_env["NATIVE_TASK_FILE"] = task_file
             nproc = sb.exec(
                 "bash", "-lc", "exec python3 /native_driver.py < /dev/null",
-                env={**native_base_env,
-                     "NATIVE_TRANSCRIPT": sandbox_tpath,
-                     "NATIVE_TASK": tl.build_attempt_prompt(description, k, attempts)},
+                env={**native_base_env, **task_env},
                 timeout=timeout_s + 300, workdir="/testbed")
             driver_out = nproc.stdout.read()
             nrc = nproc.wait()
