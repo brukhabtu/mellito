@@ -94,11 +94,42 @@ count/position rather than distractor quality.
   `regex-tester`); target's directory is ordered/named so it lists first.
 - **C-5-last.** Same 5 skills; target ordered last.
 - **C-20-last.** Target + 19 unrelated well-written distractors; target
-  last. This cell is the one most likely to approach or exceed the
-  documented 1%-of-context-window listing budget (mechanism-notes §4) —
-  the distractor set must include some longer descriptions deliberately so
-  the cell actually probes the truncation regime, not just a longer list
-  that still fits comfortably.
+  last. Intended to probe the truncation regime (mechanism-notes §4) — but
+  **truncation is not automatically reachable at 20 skills, and the default
+  ~30-word descriptions used elsewhere in this grid do NOT reach it.**
+  Explicit arithmetic (documented budget = 1% of the subject's context
+  window; per-entry cap 1,536 chars ≈ ~384 tokens; ~4 chars/token):
+  - Subject context window **200k tokens** (standard Claude Sonnet/Opus) →
+    budget ≈ **2,000 tokens ≈ 8,000 chars**. Twenty ~30-word
+    (~200-char ≈ ~50-token) entries = ~1,000 tokens < 2,000 → **no
+    truncation** (the whole listing fits with margin).
+  - To force overflow at 20 skills on a 200k subject, mean entry must
+    exceed 2,000/20 = **100 tokens ≈ ~400 chars**. Distractor descriptions
+    are therefore **mandated ≥ ~500 chars each**, ideally pushed toward the
+    1,536-char per-entry cap; at the cap, 20 × 384 = ~7,680 tokens ≫ 2,000,
+    truncation strongly engaged.
+  - **If the subject runs at a 1M context window**, budget ≈ 10,000 tokens
+    ≈ 40,000 chars; even 20 near-cap (1,536-char) entries = ~30,720 chars
+    still fit → truncation UNREACHABLE at 20 skills, requiring ~27+ skills.
+    So the subject's context window is a **build-time input** that sets the
+    required count × description length.
+  - **Build-time precondition (binding):** the cell is valid only if
+    `/context` (documented to report post-budget listing size) confirms the
+    listing actually exceeds the budget and at least one description was
+    dropped. If it cannot be made to engage within the count/length above,
+    **relabel this cell "count/dilution only, truncation not exercised"**
+    and drop the truncation claim (see §3 note).
+  - **Interpretation caveat (documented drop-order):** truncation drops
+    "the skills the *user* invokes least" — i.e. by **historical
+    invocation frequency across sessions** (mechanism-notes §4). In a
+    fresh single-session probe workspace **every skill has zero invocation
+    history**, so *which* description is dropped is **not controllable** and
+    the docs do not specify the zero-history tiebreak. Therefore C-20-last
+    can measure (i) count/dilution and (ii) whether truncation ENGAGES AT
+    ALL (observable via `/context`), but it **cannot cleanly attribute a
+    drop to the target** or test "target's description was truncated →
+    invocation fell." Report it as a mechanism-presence check, not a clean
+    target-drop manipulation.
 
 `C-20-first` is optional/stretch (see §5 budget) — the core design covers
 count(1,5) fully crossed with position, plus count=20 at one position, on
@@ -141,10 +172,19 @@ solution reachable without it.
   could plausibly solve most of them in one or two turns, keeping token
   cost and detector ambiguity low.
 - **Outcome variable**: binary `invoked ∈ {0, 1}` per trial, per the
-  detector in mechanism-notes §3 — a `tool_use` block with
-  `name == "Skill"` (subject to the version-confirmation caveat there;
-  P10.2's first build step is a proof-of-one trial that pins the actual
-  tool name before any grid cell runs for score).
+  dual-channel detector in mechanism-notes §3. The pinned harness is Claude
+  Code `2.0.14`, which emits the **`SlashCommand`** tool (verified: no
+  `Skill` tool exists in the pin's uniform init tool list) — so the primary
+  signal (channel S) is a `tool_use` with `name == "SlashCommand"` whose
+  `input.command` begins with `/<target-skill-name>` (the argument scope is
+  mandatory — bare `SlashCommand` calls include built-ins like `/compact`
+  and must not be counted). Channel K (`name == "Skill"`, forward-compat,
+  expected 0 on `2.0.14`) and channel T (assistant text containing the
+  literal `/<target-skill-name>`) are also counted; `invoked` = any channel
+  names the target ≥ once. **Per-channel counts (S/K/T) are reported per
+  cell.** P10.2's first build step is the mandatory proof-of-one trial that
+  pins the exact `SlashCommand` `input` shape before any grid cell runs for
+  score (mechanism-notes §3, "Mandatory proof-of-one").
 - **N per cell**: proposed **N=10** for the manipulation check (§4) and
   **N=15** for the full P10.3 grid (§5) — see cost math for how these were
   set against budget, not the other way around. These are small; §6 is
@@ -194,12 +234,35 @@ solution reachable without it.
 Rather than a full 3×3×4×2 = 72-cell factorial (infeasible at ≤$10), the
 design is a **reduced grid**: one core A×B factorial at fixed
 C=solo/D=convenience, plus two single-factor sweeps that vary C and D
-independently off a fixed A-high/B-specific baseline. This is a deliberate
-trade — it cannot estimate interaction effects (e.g., does the
-position effect change under low semantic overlap?) — but it keeps every
-cell interpretable as one factor's marginal effect, which matches the
-"keep it simple and honest" instruction better than a sparse, underpowered
-full factorial would.
+independently off a fixed A-high/B-specific baseline.
+
+**LOCKED (OPUS decision): the 11-cell reduced grid stands.** It satisfies
+the P10-A gate literally — the gate asks for "≥4 pre-registered factors …
+each with effect estimates," i.e. **marginal** per-factor effects, and the
+design delivers a risk-difference + Newcombe CI for each of A, B, C, D
+(§6). Interactions are NOT required by the gate. Two points make the lock
+the honest call rather than a budget dodge:
+- **The one interaction with both plausible main effects is already free.**
+  The core block is a full **A{3}×B{2} factorial**, so the
+  **overlap×specificity** interaction — the most decision-relevant one,
+  since both factors bear on "does the model see a matching description" —
+  is estimable (descriptively) from the existing 6 cells at **zero added
+  cost**. It is not a missing capability; §6 reports the 2×3 cell means so
+  it is inspectable.
+- **C- and D-involving interactions are deliberately deferred, not bought.**
+  The C and D sweeps are marginal-only (fixed A-high/B-specific baseline),
+  so e.g. overlap×position or necessity×overlap are not estimable here.
+  Adding them (a 2-cell A-low×position pair, or a necessity×A-low pair)
+  is affordable on the budget (§5) but would yield a **difference-in-
+  differences of proportions at N=15**, whose Newcombe CI spans well beyond
+  the ±30-point practical-significance bar (§6) — i.e. it would be
+  uninterpretable by this design's own analysis plan, buying the
+  *appearance* of an interaction estimate without the power to use it, and
+  spending budget on numbers §6 could not read. If an interaction proves
+  worth the power, it belongs in a **sequential follow-up pre-registration
+  after the main effects are in hand**, sized to detect it — not bolted on
+  here. This keeps every cell interpretable as one factor's marginal
+  effect, matching the "keep it simple and honest" instruction.
 
 | Block | Cells | Factors varied | Factors held fixed |
 |---|---|---|---|
@@ -232,32 +295,49 @@ check BEFORE the full grid").
   the model is discriminating on relevance rather than simply never
   invoking anything.
 
-**Pre-registered pass condition**: reference-model invocation rate
-**≥80% in the hot cell AND ≤20% in the cold cell**, at N=10/cell (per
-§2). Two notes on the threshold, since the task asked for justification
-or an improvement:
+**Pre-registered pass condition (LOCKED — OPUS decision): the literal
+`≥80% hot AND ≤20% cold`, at N=10/cell, is the BINDING gate.** The
+Newcombe gap-CI is reported alongside as a secondary diagnostic but is
+**not** the gate. Rationale (the decision, made on the merits):
 
-- 80/20 is the number given in the task brief and is kept as the default
-  because it matches the spirit of PLAN's general MDD discipline
-  (treat marginal differences as noise; demand a large, unambiguous gap
-  before trusting the harness). At N=10, an 80% observed rate has a
-  Wilson 95% CI of roughly [49%, 94%] and a 20% observed rate roughly
-  [6%, 51%] — the intervals are wide but do not overlap, which is the
-  actual property the gate needs (non-degenerate variance = the harness
-  can produce different outcomes in the two cells, not that either point
-  estimate is precisely known).
-- **Proposed refinement, not a replacement**: report the **paired gap**
-  (hot rate − cold rate) with a Newcombe-method CI (§6) rather than
-  checking each threshold in isolation. A hot/cold split of, say, 70%/30%
-  fails the literal 80/20 rule but still demonstrates a 40-point gap with
-  a CI excluding 0 — arguably still evidence the mechanism is
-  discriminating, and PLAN's kill criterion ("floor/ceiling in both
-  extreme cells → one redesign, then kill") should be read as targeting
-  *degenerate* results (both cells near 0% or both near 100%, or hot ≤
-  cold), not narrowly missing 80/20. Recommend OPUS decide explicitly
-  whether the literal 80/20 or the gap-CI framing is the binding gate
-  before P10.2 build locks it in — flagging this as a genuine open
-  decision, not silently substituting one for the other.
+- **Legibility and non-gameability.** The gate is a pre-registered
+  pass/fail line the operator can check in one glance; a literal
+  `≥8/10 hot AND ≤2/10 cold` cannot be re-argued after the fact. A CI on
+  the hot−cold gap invites exactly the post-hoc latitude the brief warns
+  about ("does this 40-pt gap with a CI barely excluding 0 count?") and, at
+  **N=10, the Newcombe CI on a difference of proportions is ~±30-40 points
+  wide** — too fragile to bear the weight of a go/no-go on the *whole*
+  characterization phase. The point estimates need not be precise; the gate
+  only needs the two extreme cells to be unambiguously separated, which
+  8/10-vs-2/10 delivers.
+- **It operationalizes the PLAN kill criterion cleanly.** PLAN's kill
+  trigger is "manipulation check floor/ceiling in **both** extreme cells →
+  one redesign, then kill" — i.e. degeneracy. Mapping to the literal gate:
+  - **PASS** (≥80% hot AND ≤20% cold) → proceed to the full grid.
+  - **Non-degenerate miss** (clear separation, hot > cold, but a threshold
+    is missed — e.g. 70%/30%) → **one redesign allowed** per PLAN, then
+    re-gate; this is the "one redesign" branch, not an immediate kill.
+  - **Degenerate** (both cells near-floor, both near-ceiling, or
+    hot ≤ cold) → the kill condition; after the one sanctioned redesign,
+    kill characterization and write up.
+  The gap-CI is reported only to *classify* which branch a miss falls into
+  (separation present vs. degenerate), never to override the literal line.
+- **N can be raised before locking if the proof-of-one shows cheap tokens.**
+  At N=10 the gate needs 8/10 and 2/10; the §5 fallback of N=20/cell
+  ($0.80, still under the ≤$1 P10.2 cap) tightens both Wilson intervals and
+  is the recommended bump if the proof-of-one confirms per-trial cost is at
+  or below the §5 estimate. The 80/20 thresholds do not change with N; only
+  the required counts (16/20 and 4/20) do.
+
+**Cell-reuse note:** the hot and cold cells ARE two of the six core A×B
+cells (A-high×B-specific and A-low×B-specific, both at C-solo/D-convenience).
+The P10.2 manipulation check runs them at N=10 under their own run IDs as
+the gate. Because the detector/config may be adjusted by P10.2's
+proof-of-one, P10.3 **re-runs these two cells fresh at the full N=15**
+rather than pooling across a possible config change (cost impact is
+negligible — 2 cells × 5 extra trials). Pooling is permitted ONLY if the
+CLI version, config, and detector are byte-identical between the two phases,
+which must be asserted in FINDINGS before any pooling.
 
 ## 5. Cost math
 
@@ -349,11 +429,19 @@ large enough that a crude interval already excludes zero:
    factors at their §1 fixed baseline), with a **Newcombe hybrid-score CI**
    on the difference (the standard small-sample-appropriate way to get a
    CI on a difference of two Wilson intervals without assuming normality).
-   No logistic regression, no interaction terms, no multiple-comparisons
-   correction beyond eyeballing the CI widths — this is explicitly a
-   scoping/characterization pass, not a hypothesis-test battery, and
-   PLAN's own guidance is to keep this simple and honest rather than
-   over-engineer statistics on an 11-cell, N=15 design.
+   No logistic regression, **no formally-tested** interaction terms, no
+   multiple-comparisons correction beyond eyeballing the CI widths — this
+   is explicitly a scoping/characterization pass, not a hypothesis-test
+   battery, and PLAN's own guidance is to keep this simple and honest
+   rather than over-engineer statistics on an 11-cell, N=15 design. **One
+   descriptive exception (no added cells, no formal test):** because the
+   core block is a full A{3}×B{2} factorial, report the **six A×B cell
+   rates as a 2×3 table** so the **overlap×specificity** interaction is
+   *inspectable* (do specific descriptions help more when overlap is low?).
+   This is presented as descriptive cell means only — no interaction CI is
+   claimed, since at N=15 a difference-in-differences CI would exceed the
+   ±30-pt bar in item 3. All interactions **involving C or D** are out of
+   scope (the C/D sweeps are marginal-only; see §3 lock).
 3. **Practical-significance bar, borrowed in spirit from the project's
    MDD discipline**: report a factor effect as "distinguishable" only if
    its Newcombe CI excludes 0 **and** the point estimate clears a coarse
@@ -384,19 +472,45 @@ large enough that a crude interval already excludes zero:
    integrity rule — this pre-registration does not itself contain any
    results, only the plan for producing and reporting them.
 
-## 7. Open items for OPUS review
+## 7. Review resolutions (OPUS, 2026-07-11) + items left to the operator
 
-- Confirm or replace the `Skill` vs `SlashCommand` tool-name assumption
-  (mechanism-notes §3) via proof-of-one before locking the detector.
-- Decide the literal-80/20 vs. gap-CI framing for the manipulation-check
-  gate (§4) explicitly, rather than leaving both live.
-- Decide whether the reduced 11-cell grid (§3) is an acceptable
-  substitute for a full factorial given the stated inability to estimate
-  interactions, or whether a specific interaction (most likely
-  overlap × position, since both bear on "does the model even see the
-  right description") is worth adding at the cost of a 12th/13th cell.
-- Confirm N=10 (manipulation check) / N=15 (full grid) against the actual
-  per-trial cost once P10.2's proof-of-one trial exists — this document's
-  cost math is a pre-trial estimate, not a measurement.
-- Confirm Sonnet 5 as the sole P10.3 reference subject, or approve adding
-  a cheap Haiku secondary pass within the existing budget.
+**Resolved by this review (now binding in the sections above):**
+
+1. **Invocation detector channel — RESOLVED.** The pin is Claude Code
+   `2.0.14` (`infra/trial_logic.py`); every on-disk transcript's init tool
+   list contains `SlashCommand` and **no** `Skill` tool, and skills surface
+   under the init `slash_commands` field. Detector is **dual-channel,
+   target-scoped**: channel S (`SlashCommand` tool_use whose
+   `input.command` = `/<target>`, primary), channel K (`Skill`,
+   forward-compat, expected 0), channel T (text `/<target>`); per-channel
+   counts reported; `invoked` = any names the target. Proof-of-one is
+   P10.2's mandatory first step to pin the `input` shape (mechanism-notes
+   §3, §2 outcome variable).
+2. **Manipulation gate — RESOLVED: literal 80/20 is binding**, N=10/cell;
+   Newcombe gap-CI reported only to classify a miss as separation-present
+   vs. degenerate, mapped onto PLAN's "one redesign, then kill" (§4).
+3. **Grid shape — RESOLVED: 11-cell reduced grid LOCKED.** It satisfies the
+   P10-A gate (4 marginal factor effects). The overlap×specificity
+   interaction is already free from the A×B factorial (reported
+   descriptively, §6.2); C/D-involving interactions are deferred to a
+   sequential follow-up, not bought at N=15 where their DiD CI would be
+   uninterpretable (§3).
+4. **Truncation reachability — RESOLVED.** At 20 skills with ~30-word
+   descriptions on a 200k subject the listing (~1,000 tok) is under the
+   ~2,000-tok budget → truncation UNREACHABLE as originally specified.
+   Fixed: distractor descriptions mandated ≥~500 chars (toward the
+   1,536-cap) with a binding `/context` build-time check that truncation
+   engaged; and the cell is honestly re-scoped — zero invocation history in
+   a fresh probe makes the documented drop-order (least-*invoked*-first)
+   uncontrollable, so C-20-last tests count/dilution + truncation-presence,
+   **not** a clean target-drop manipulation (§1 Factor C).
+
+**Left to the operator (not blockers for committing this pre-registration):**
+
+- Confirm N=10 (manipulation) / N=15 (grid), or bump to N=20/N=25-30, once
+  P10.2's proof-of-one measures real per-trial cost (§5 shows headroom).
+- Confirm **Sonnet 5** as the sole P10.3 reference subject (and its context
+  window — 200k vs 1M — which sets the C-20 truncation arithmetic, §1), or
+  approve a cheap Haiku secondary pass.
+- Provide the P10.3 reference-model auth path (PLAN §P10.3 operator
+  dependency); operator may veto reference-model API use entirely.

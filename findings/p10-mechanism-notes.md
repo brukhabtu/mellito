@@ -94,8 +94,10 @@ effective descriptions", direct quotes):
 
 ## 3. How invocation happens mechanically — the detector
 
-**[DOC] Current Claude Code (code.claude.com/docs/en/skills, "Restrict
-Claude's skill access")**: model-driven invocation goes through a tool
+**[DOC] Current Claude Code docs (code.claude.com/docs/en/skills, "Restrict
+Claude's skill access")** — note: this describes a **later** revision than
+the `2.0.14` this project pins; the pinned harness emits `SlashCommand`,
+not `Skill` (verified below): model-driven invocation goes through a tool
 literally named **`Skill`**. Permission syntax is `Skill(name)` /
 `Skill(name *)`; denying the bare `Skill` tool disables all model-invoked
 skills. `disable-model-invocation: true` in frontmatter removes a skill
@@ -109,28 +111,60 @@ human does).
 Code / Agent-SDK transcripts as Anthropic Messages-API content blocks
 (confirmed locally: `infra/export_trajectories.py` module docstring —
 "Canonical order is thinking -> text -> tool_use," blocks carry
-`id`/`name`/`input` verbatim). A skill invocation is therefore, in the
-current documented mechanism, an assistant-turn content block with
-`type: "tool_use"` and `name: "Skill"` (input carries the skill name and
-any arguments). **This is the P10.2 detector**: scan each trial's assistant
-turns for a `tool_use` block whose `name == "Skill"` (or `SlashCommand` —
-see the version caveat immediately below); a trial "invokes" if at least
-one such block appears before the trial ends.
+`id`/`name`/`input` verbatim). A model-driven invocation is therefore an
+assistant-turn content block with `type: "tool_use"` whose `name` is the
+invocation tool, and whose `input` names the skill being invoked.
 
-**[OBS] Version caveat — must be verified empirically before P10.2 locks
-the detector.** This repo's own A0 manipulation check (run
-`20260709T235258` + `20260710T000737`, FINDINGS 2026-07-10) recorded
-skills surfacing in the headless worker's **init event** under a field
-named `slash_commands`, and described the invocation channel as the
-**"SlashCommand tool"** — not "Skill." That run predates this session and
-may reflect an earlier Claude Code / Agent SDK release where skills were
-still modeled as slash commands proper (the current docs note: "Custom
-commands have been merged into skills" — implying a schema change
-happened at some point). **Action for P10.2**: before trusting the
-`name == "Skill"` filter, run one proof-of-one trial against whatever
-Claude Code / Agent SDK version this harness's runner actually pins, and
-confirm the literal tool name in the recorded `tool_use` block. Do not
-assume the current docs' name is what the pinned CLI version emits.
+**[OBS] The pinned harness emits `SlashCommand`, NOT `Skill` — verified,
+not assumed.** The runner pins **Claude Code `2.0.14`**
+(`infra/trial_logic.py`, `CLAUDE_CODE_VERSION = "2.0.14"`, installed by
+`node_claude_install_cmds()` as `npm install -g
+@anthropic-ai/claude-code@2.0.14`). Every on-disk transcript produced by
+that pin carries a **uniform** init-event tool list —
+`["Task","Bash","Glob","Grep","ExitPlanMode","Read","Edit","Write","NotebookEdit","WebFetch","TodoWrite","WebSearch","BashOutput","KillShell","SlashCommand"]`
+— which contains **`SlashCommand` and no `Skill` tool** (grep across all
+`experiments/runs/**/transcript.jsonl`: zero `"name":"Skill"`, zero `Skill`
+in any `tools` list; run `20260707T215242-v001-baseline` init events are
+representative). Skills surface for the model under the init event's
+**`slash_commands`** field and are invoked through the **`SlashCommand`**
+tool, exactly as the A0 check recorded (runs `20260709T235258` +
+`20260710T000737`, FINDINGS 2026-07-10: "the headless worker's init event
+lists all three in `slash_commands`, invocable via the SlashCommand tool").
+The current public docs' `Skill`-tool name (§3 opening) describes a
+**later** Claude Code revision than the one this project pins; it is
+forward-compat context, **not** what `2.0.14` emits.
+
+**[DOC/OBS] The P10.2 detector — dual-channel, target-scoped.** Scan each
+trial's assistant turns and count, per channel, `tool_use` blocks that name
+the **target skill** (not merely any invocation-tool call):
+- **Channel S (SlashCommand — primary for the pinned `2.0.14`)**: a
+  `tool_use` with `name == "SlashCommand"` whose `input.command` (or
+  equivalent argument string) begins with `/<target-skill-name>`. The
+  argument scope is **mandatory**: the built-in slash commands
+  (`/compact`, `/context`, `/cost`, `/init`, `/review`, …) also flow
+  through the `SlashCommand` tool, so a bare "a `SlashCommand` block
+  appeared" over-counts and must NOT be used as the invocation signal.
+- **Channel K (Skill — forward-compat)**: a `tool_use` with
+  `name == "Skill"` whose `input` names the target skill. Present for
+  robustness if a future re-pin lands the `Skill`-tool revision; expected
+  count 0 on `2.0.14`.
+- **Channel T (text fallback)**: an assistant **text** block containing the
+  literal token `/<target-skill-name>` even when no tool_use is emitted
+  (the A0 check also scanned text and found 0 mentions — this channel keeps
+  that signal explicit).
+Per-cell reporting is **per-channel counts** (S / K / T) plus the binary
+`invoked ∈ {0,1}` = (S ∨ K ∨ T names the target ≥ once before trial end).
+On `2.0.14` the binary is expected to be driven entirely by channel S.
+
+**[OBS→must-confirm] Mandatory proof-of-one, P10.2's FIRST build step.**
+Before any scored cell runs, generate ONE hot-cell trial with the target
+skill installed, invoke it (or elicit its invocation), and read back the
+recorded block to pin the **exact** `input` shape of channel S on `2.0.14`
+(the literal `input` key holding the command string, and whether the
+skill's invocable form is `/<name>` verbatim or namespaced). The
+detector's channel-S argument match is finalized against that observed
+block, not against this note. Record the observed block's `name` +
+`input` keys in FINDINGS as the detector's ground truth before scoring.
 
 **[DOC] Two other invocation-adjacent signals worth logging alongside the
 detector**, both from the current docs:
@@ -190,8 +224,9 @@ fields not covered by the generic spec — `argument-hint`, `arguments`,
 directly onto the frontmatter table in §2/§3: `context: fork` runs the
 skill in an isolated subagent per the docs' "Run skills in a subagent"
 section — worth noting because a forked skill's invocation still shows up
-as a `Skill` tool_use in the parent transcript even though its execution
-happens elsewhere.
+as an invocation-tool block (`SlashCommand` on the pinned `2.0.14`;
+`Skill` in the newer docs revision) in the parent transcript even though
+its execution happens elsewhere.
 
 **[OBS] v006-skill-library** (`experiments/variants/v006-skill-library/`,
 status: rejected) is the closest prior art to P10's probe grid in this
@@ -203,9 +238,10 @@ following the documented pattern (third person, explicit "Use
 before/when/to..." clause), plus a one-line CLAUDE.md pointer naming one
 skill explicitly (`/reproduce-before-editing`). Manifest + FINDINGS record
 the outcome precisely:
-- **0/12 trials invoked any skill** via the (then-named) SlashCommand
-  channel, despite skills surfacing correctly in the init event and the
-  system prompt naming one by its invocable form.
+- **0/12 trials invoked any skill** via the `SlashCommand` channel (the
+  pinned harness's invocation tool — see §3), despite skills surfacing
+  correctly in the init event's `slash_commands` field and the system
+  prompt naming one by its invocable form.
 - **A measurable passive effect existed anyway**: skill descriptions
   sitting in context shifted behavior on the same 4 anchor tasks — mean
   reproduction-script runs 1.5 vs 0.5 (3x), mean verify runs 1.8 vs 0.4
@@ -228,7 +264,7 @@ the outcome precisely:
 | Three-level progressive disclosure (metadata always, body on trigger, resources on demand) | **[DOC]** — Platform docs, engineering post, agentskills.io all agree verbatim |
 | `name`≤64 chars, `description`≤1024 chars (spec) / 1536 chars combined listing cap (Claude Code) | **[DOC]** |
 | Description should be third-person, specific, state both what+when | **[DOC]** — explicit authoring guidance with good/bad examples |
-| Invocation tool is literally named `Skill` in current Claude Code | **[DOC]** for the current doc revision; **[OBS] contradicted** by this repo's own A0 transcripts (`SlashCommand`, `slash_commands` init field) from an earlier session/version |
+| Invocation tool name for THIS project's pinned harness (Claude Code `2.0.14`) is **`SlashCommand`**, skills listed under the init `slash_commands` field; no `Skill` tool exists in the pin | **[OBS]** — verified: uniform `tools` list across all on-disk transcripts contains `SlashCommand`, zero `Skill`; A0 corroborates. The docs' `Skill`-tool name is a **later** CC revision, forward-compat only |
 | Truncation under many skills drops least-*invoked* skills' descriptions first, budget = 1% of context window | **[DOC]** — precise, load-bearing mechanism for the count factor |
 | List *position* (first/last) independently affects selection or truncation | **not documented either way** — **[ASSUME]** open question |
 | Passive behavioral shift from Level-1 metadata alone, without invocation | **[OBS]** — this repo's v006 A0 result; not discussed in official docs at all |
@@ -260,10 +296,13 @@ PLAN.md factors:
    with the "convenience" framing implicit in the docs' own examples,
    which are all convenience-type (PDF extraction is rarely
    unsolvable-without-the-skill).
-4. **Exact tool name / transcript shape for this project's pinned
-   harness version.** §3's version caveat — must be confirmed on a
-   proof-of-one trial before the P10.2 detector is finalized, given the
-   documented-vs-observed discrepancy already on record in this repo.
+4. **Exact `input` shape for the pinned harness's `SlashCommand`
+   invocation.** RESOLVED at the tool-name level: the pin is Claude Code
+   `2.0.14`, which emits `SlashCommand` (not `Skill`) — see §3. What
+   remains for the proof-of-one is only the literal `input` argument shape
+   (which key holds the `/<name>` command string, and whether the skill's
+   invocable form is namespaced) — a confirmation of detector plumbing,
+   not an open question about which channel to watch.
 5. **Count-vs-truncation interaction at small N.** The documented
    truncation mechanism only engages once the listing exceeds ~1% of
    context window — for a small number of installed skills (the likely

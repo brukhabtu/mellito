@@ -1969,3 +1969,29 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   budgets, operator dependencies (auth path + subject-list confirmation for
   P10.3) — DONE; (4) own commit pushed, status.py runs, `.claude/`+CLAUDE.md
   untouched — validated in the commit that carries this entry.
+
+## 2026-07-11 · P10.1 · COMPLETE — mechanism notes + probe-grid PRE-REGISTERED (Opus review: GO)
+- Deliverables (this commit, reviewed+final): `findings/p10-mechanism-notes.md`
+  (three-level disclosure mechanism, frontmatter contract, sources cited,
+  documented/observed/assumption discipline) and
+  `findings/p10-probe-grid-draft.md` (the PRE-REGISTRATION: 11-cell locked
+  grid over 4 factors, N=15/cell for the full grid, literal 80/20
+  manipulation gate at N=10/cell binding with pass / non-degenerate-miss /
+  degenerate branches mapped onto PLAN's kill criteria, confound controls,
+  cost $0.40 + $3.30 within caps).
+- **Load-bearing review finding: the pinned harness (Claude Code 2.0.14,
+  trial_logic CLAUDE_CODE_VERSION) emits `SlashCommand`, NOT the `Skill`
+  tool current docs describe** — verified by grep across every on-disk run
+  transcript (zero `Skill` tool entries; skills surface via the init
+  `slash_commands` field). Detector is dual-channel (SlashCommand primary,
+  target-scoped to exclude built-ins; Skill forward-compat; text-mention
+  tertiary) with per-channel reporting; P10.2's mandatory first step is a
+  proof-of-one pinning the exact `input` shape. The unreviewed draft would
+  have measured a tool name that never fires on our harness.
+- Truncation cell re-scoped after explicit arithmetic (20 × ~50-tok
+  descriptions ≈ 1,000 tok vs ~2,000-tok budget → unreachable): distractor
+  descriptions mandated ≥~500 chars + a `/context` build-time check; cell
+  tests count/dilution + truncation-presence, not targeted drop-order (which
+  is usage-history-based and uncontrollable in fresh probes).
+- Residual operator confirmations (non-blocking for the P10.2 build): final
+  N, subject list + its context window, reference-model auth path.
