@@ -1995,3 +1995,27 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   is usage-history-based and uncontrollable in fresh probes).
 - Residual operator confirmations (non-blocking for the P10.2 build): final
   N, subject list + its context window, reference-model auth path.
+
+## 2026-07-11 · P10.2 · harness BUILT (159 tests green) + one pre-data amendment; manipulation check awaits operator auth
+- `infra/probe_harness.py` (~800 lines, stdlib-only) + 27 tests: the 11
+  locked cells + a `forced-invocation` proof-of-one cell, workspace
+  generator (probe workspaces under `experiments/probes/<run>/…`, README
+  only in git), dual-channel detector over the harness's stream-json,
+  Wilson/Newcombe aggregation, the literal-80/20 gate with
+  pass/miss/degenerate branches, and runner adapters (`run_probe_local`
+  guarded by PROBE_AUTH_OK=1; Ornith adapter documented, lands in P10.4).
+- **Pre-registration amendment (2026-07-11, BEFORE any probe data):**
+  `invoked` = S ∨ K (actual tool call) only; channel T (text mention)
+  reported per cell but never counted — the original "any channel" wording
+  would have scored prose mentions as invocations. Amendment noted inline
+  in the pre-reg §2/§7 with this entry as the record.
+- Two build-time interpretations recorded in the module (both resolve at
+  the proof-of-one): liberal `input`-key fallback gated by the target-name
+  boundary regex; `NN-<dir>` ordering prefixes with clean frontmatter
+  `name` so the invocable form is order-independent.
+- **Next actions blocked on operator:** (1) auth path for reference-model
+  probe sessions (Anthropic API key as Modal secret, or sanctioned local
+  CLI use → sets PROBE_AUTH_OK); (2) subject list + its context window;
+  (3) confirm N (10 manip / 15 grid). Sequence once unblocked:
+  forced-invocation proof-of-one (pins the SlashCommand `input` shape) →
+  hot/cold manipulation check (~$0.40) → gate verdict → P10.3 grid.

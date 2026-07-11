@@ -180,9 +180,14 @@ solution reachable without it.
   mandatory — bare `SlashCommand` calls include built-ins like `/compact`
   and must not be counted). Channel K (`name == "Skill"`, forward-compat,
   expected 0 on `2.0.14`) and channel T (assistant text containing the
-  literal `/<target-skill-name>`) are also counted; `invoked` = any channel
-  names the target ≥ once. **Per-channel counts (S/K/T) are reported per
-  cell.** P10.2's first build step is the mandatory proof-of-one trial that
+  literal `/<target-skill-name>`) are also detected; **`invoked` = S ∨ K
+  only** — an actual tool call. Channel T is REPORTED per cell but never
+  flips the binary: mentioning a skill in prose is not invoking it.
+  *(AMENDED 2026-07-11, before any probe data existed: the original text
+  read "`invoked` = any channel names the target ≥ once", which would have
+  counted bare text mentions as invocations. Reconciled to the
+  implementation at P10.2 build review; see FINDINGS P10.2 entry.)*
+  **Per-channel counts (S/K/T) are reported per cell.** P10.2's first build step is the mandatory proof-of-one trial that
   pins the exact `SlashCommand` `input` shape before any grid cell runs for
   score (mechanism-notes §3, "Mandatory proof-of-one").
 - **N per cell**: proposed **N=10** for the manipulation check (§4) and
@@ -483,7 +488,8 @@ large enough that a crude interval already excludes zero:
    target-scoped**: channel S (`SlashCommand` tool_use whose
    `input.command` = `/<target>`, primary), channel K (`Skill`,
    forward-compat, expected 0), channel T (text `/<target>`); per-channel
-   counts reported; `invoked` = any names the target. Proof-of-one is
+   counts reported; `invoked` = S ∨ K (amended 2026-07-11 pre-data; T
+   reported-only, see §2). Proof-of-one is
    P10.2's mandatory first step to pin the `input` shape (mechanism-notes
    §3, §2 outcome variable).
 2. **Manipulation gate — RESOLVED: literal 80/20 is binding**, N=10/cell;
