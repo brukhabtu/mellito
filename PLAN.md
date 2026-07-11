@@ -28,7 +28,14 @@ deliverables:
 - **P10-C — instillation.** SFT on synthetic consult-then-act traces in
   Ornith's own session format (near-distribution: same tools, same shape,
   one added consult step). Gates, separated capability-vs-cash-out:
-  (1) invocation rate on HELD-OUT need-engineered probes ≥50% (baseline ~0);
+  (1) CONSULTATION rate on HELD-OUT need-engineered probes ≥50% (baseline
+  ~0) — consultation = any skill-content access, i.e. an invocation tool
+  call OR a transcript-detected read of the skill file; channel breakdown
+  reported. *(Amended 2026-07-11 pre-data, at P10.5 design review: the
+  original "invocation rate" wording under-counted direct skill-file reads,
+  which are the same disposition through a different channel. The probe
+  GRID's outcome variable is unchanged — grid cells measure the
+  spontaneous-invocation channel specifically.)*;
   (2) paired solve delta on need-engineered tasks positive at the standing
   ≥+5-points-per-40 discipline (scaled to the set's size);
   (3) dev-set no-regression: paired net ≥ −1 vs the same pre-SFT checkpoint

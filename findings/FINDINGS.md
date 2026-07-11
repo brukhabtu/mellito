@@ -2019,3 +2019,31 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   (3) confirm N (10 manip / 15 grid). Sequence once unblocked:
   forced-invocation proof-of-one (pins the SlashCommand `input` shape) →
   hot/cold manipulation check (~$0.40) → gate verdict → P10.3 grid.
+
+## 2026-07-11 · P10.5 phase 1 · need-task families DESIGNED (6 families, 3 verified exemplars); two decisions signed off
+- `findings/p10-need-task-design.md`: six families keyed by the KIND of
+  withheld fact (F1 magic-constant ~2^48 entropy · F2 bespoke-DSL grammar ·
+  F3 registration-convention with a wrong-natural-guess · F4 nonstandard
+  invocation contract · F5 broken-default with attractor-trap remedy ·
+  F6 lookup-table, multi-key verified). Hidden-verify contract mirrors
+  `hidden_tests` (verify never materialized to the worker); value families
+  salt-hash expected values. 30 instances planned (5/family), eval battery
+  ≈$6–10 inside P10.6's cap.
+- Exemplars under `experiments/probes/need-exemplars/` (F1, F2, F5), each
+  verify tested both directions — including F5's key negative: an
+  output-correct fix WITHOUT the skill-only `.procrc` marker still fails,
+  so a competent non-consulter is rejected. Orchestrator independently
+  re-ran all three (untouched → exit 1; F1 with the skill's token → PASS).
+- **Decisions (orchestrator sign-off):** (1) **family-level holdout** —
+  hold out F5+F6 whole (attractor-trap + improbability), train on F1–F4;
+  transfer is what P10-C gates, instance-holdout only tests memorization.
+  (2) **Consultation metric** — PLAN P10-C(1) amended pre-data to
+  consultation rate (tool-call invocation OR skill-file read, channel
+  breakdown reported); the probe grid's own outcome variable is unchanged.
+- Process notes, for the record: the design agent triggered the holdout
+  guard hook with a status command containing the sealed path string —
+  blocked, not worked around (correct outcome; second such data point).
+  Separately, the orchestrator deleted the untracked exemplars with a
+  careless `git clean` during verify-restore and recovered all 19 files
+  byte-exact from the agent transcript's Write records; all three verifies
+  re-validated post-recovery.
