@@ -1916,3 +1916,27 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   fail, n_attempts=3, attempts_exhausted, native_ended=done (multi-attempt
   path exercised). Mechanics validated on both branches; full F sweep
   (dev 40×5, attempts=3) launched.
+
+## 2026-07-11 · P9-F · RESULT (run `20260711T000806`): native+wrapper 27/40 — protocol gap CLOSES under the wrapper; dev battery closed
+- F = stock · native driver · attempts=3, dev 40×5, $4.81, 2 invalid (both
+  transient Modal sandbox-shutdown before trial start on django-11206 t0/t1,
+  wall 0s — infra noise, not the driver; that task's paired numbers sit on 3
+  valid trials as a result). Wrapper telemetry: 179/200 trials stopped on
+  `self_verify_pass` (89.5%), mean 1.79 attempts.
+- **F vs E (native single): +2/−0/=38, net +2.** Retries add almost nothing
+  natively. **F vs D (CC wrapped): +2/−2/=36, net 0** — exact parity, 27=27.
+- Pre-registered reading (26–28 band) confirmed: **the wrapper fully closes
+  the protocol gap; Claude Code costs nothing once wrapped.** And the
+  mechanism prediction lands hard: the SAME wrapper is worth **+7 inside
+  Claude Code but only +2 natively** — because the native session already has
+  Ornith's trained two-stage geometry (persistent workspace, own stop), the
+  wrapper's value is restoring exactly what CC's session model takes away.
+  This is the cleanest mechanism evidence in the project.
+- Holdout trigger NOT met (F=27 < D+2=29): holdout battery composition
+  unchanged (stock·CC·single, tuned·CC·wrapped, stock·CC·wrapped).
+- **Final dev ladder (all runs cited above):** stock·CC·single 20 →
+  native·single 25 → native·wrapped 27 = stock·CC·wrapped 27 →
+  tuned·CC·wrapped 28. P9 spend ≈ $10 of the ~$13 ceiling; project ≈ $65 of
+  $150. **Dev-side close-out battery is COMPLETE** — every registered cell
+  (D, E, F, drift audit) is measured; only the operator-gated holdout
+  confirmation remains.
