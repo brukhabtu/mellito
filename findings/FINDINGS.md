@@ -1894,3 +1894,25 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   unchanged.
 - Cost: liveness ≤$0.3 + full ~$3–5 (early stop caps the multiplier); P9
   spend ≈ $5 of the ~$13 battery ceiling.
+
+## 2026-07-11 · P9-F · build incident + proof-of-one PASS — full sweep launched
+- Implementation (commit `infra: P9-F native attempts wrapper`): loop mirrors
+  P8 1:1; new pure `trial_logic.detect_native_verify` (exec-not-read VERIFY
+  qualification, `[exit code: 0]` outcome, last-invocation-wins); driver
+  untouched; 14 new unit tests (132 total green); attempts=1 native behavior
+  preserved exactly.
+- **Incident (third old-testbed encoding trap, harness-side this time):** the
+  first proof pair delivered the per-attempt prompt via a NATIVE_TASK env var;
+  on non-UTF-8-locale testbeds python reads env bytes with surrogateescape, so
+  the U+200B in django-11066's description reached the chat body as lone
+  surrogates → vLLM HTTP 400 on EVERY call (both proofs `native_ended=error`,
+  runs `one-20260710T2355*`). Fix: per-attempt prompt written as utf-8 BYTES
+  to `/tmp/native_task.attempt{k}.md` (NATIVE_TASK_FILE override; the E path's
+  proven-clean channel); attempts=1 keeps the pristine P9-E env. Logged here
+  with the fix per the integrity rule; the pattern (env vars are not
+  8-bit-clean on these images) joins the py3.6 `text=`/fsencode traps.
+- Proof-of-one v2 (fixed): django-11066 **pass, n_attempts=1,
+  stop_reason=self_verify_pass** (early-stop path exercised); django-10999
+  fail, n_attempts=3, attempts_exhausted, native_ended=done (multi-attempt
+  path exercised). Mechanics validated on both branches; full F sweep
+  (dev 40×5, attempts=3) launched.
