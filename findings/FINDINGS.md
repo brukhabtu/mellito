@@ -1940,3 +1940,32 @@ This mirrors house style: falsifiable prediction + rejection condition + cost ce
   $150. **Dev-side close-out battery is COMPLETE** — every registered cell
   (D, E, F, drift audit) is measured; only the operator-gated holdout
   confirmation remains.
+
+## 2026-07-11 · PIVOT (operator-directed) · new north star: skill invocation under progressive disclosure
+- Operator direction (this session): *"I would prefer to pivot entirely to
+  this as a goal. I think that it's important for us to understand how Claude
+  models figure out when to invoke a skill… skills rely on progressive
+  disclosure based on the skills description."*
+- **Old program closing state:** dev battery complete (ladder: stock·CC·single
+  20 → native·single 25 → native·wrapped 27 = stock·CC·wrapped 27 →
+  tuned·CC·wrapped 28; drift audit passed; mechanism: wrapper restores the
+  trained two-stage geometry, +7 in CC vs +2 native). Holdout confirmation
+  staged but NOT run — no G4/G6 holdout claim; battery remains runnable
+  (operator: move ≥15 staged specs into the sealed holdout dir + create the
+  unlock flag). Spend ≈ $65 of $150.
+- **New program (P10, PLAN.md §North-star goal + §P10 phases):**
+  A) characterize the invoke/don't-invoke decision for reference models over
+  a pre-registered probe grid (≥4 factors); B) measure Ornith's gap on the
+  same grid; C) instill the disposition via near-distribution SFT on
+  consult-then-act traces, gated separately on capability (held-out probe
+  invocation ≥50%) and cash-out (need-task solve delta) plus dev
+  no-regression. Kill criteria + ≤$60 ceiling pre-committed in PLAN.md.
+- Evidence base carried in: tool census (fluent core tools, zero
+  meta-affordances), A0 (0/12 invocation; forced invocation didn't lift
+  solves), mismatch thesis (near-distribution constraint on any SFT).
+- **Goal (this entry) criteria + validation:** (1) PLAN.md new north star
+  with gates + kill criteria, old star superseded with closing state — DONE;
+  (2) this pivot memo — DONE; (3) P10 phase plan with model assignments,
+  budgets, operator dependencies (auth path + subject-list confirmation for
+  P10.3) — DONE; (4) own commit pushed, status.py runs, `.claude/`+CLAUDE.md
+  untouched — validated in the commit that carries this entry.

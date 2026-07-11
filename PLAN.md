@@ -5,16 +5,57 @@ cheapest sufficient rung: scaffold search → LoRA → (only if evidence demands
 RL. Deliberately general-purpose; recipe and findings publishable
 either way.
 
-## North-star goal
+## North-star goal (P10, 2026-07-11 — current; operator-directed pivot)
 
-By ~2026-09-15: route a defined class of coding tasks to self-hosted
-Ornith-35B inside Claude Code where the improved system (scaffold and/or
-weights) **beats stock Ornith + Claude Code by ≥+5 paired tasks on dev,
-confirmed on holdout** — or a documented negative result explaining why.
-Cost-per-solved-task on our own GPU stays a tracked observability metric, not
-a comparison bar (hosted reference baselines removed by operator redirect,
-2026-07-09). The published recipe is a first-class deliverable in both
-outcomes.
+By ~2026-09-15: an **empirically grounded account of when a model invokes a
+Claude Code skill under progressive disclosure** (skill name+description
+visible up-front; full SKILL.md loaded only on invocation), and a
+demonstration that the missing disposition can be **instilled in Ornith-35B
+by near-distribution SFT** — or a documented negative result. Three gated
+deliverables:
+
+- **P10-A — characterization.** A quantified factor model of the
+  invoke/don't-invoke decision for reference (Claude-family) models: ≥4
+  pre-registered factors — task↔description semantic overlap; description
+  specificity / trigger phrasing; skill count + list position; necessity vs
+  convenience of the skill's content — each with effect estimates from a
+  controlled probe grid. Gate: the probe harness shows non-degenerate
+  variance on a 2-cell manipulation check BEFORE the full grid, and every
+  reported effect cites run IDs.
+- **P10-B — Ornith gap.** The same probe battery on stock Ornith via
+  serve(). Gate: a per-cell invocation-rate gap table in FINDINGS (A0's 0/12
+  predicts near-floor; the probes make the shape of the floor measurable).
+- **P10-C — instillation.** SFT on synthetic consult-then-act traces in
+  Ornith's own session format (near-distribution: same tools, same shape,
+  one added consult step). Gates, separated capability-vs-cash-out:
+  (1) invocation rate on HELD-OUT need-engineered probes ≥50% (baseline ~0);
+  (2) paired solve delta on need-engineered tasks positive at the standing
+  ≥+5-points-per-40 discipline (scaled to the set's size);
+  (3) dev-set no-regression: paired net ≥ −1 vs the same pre-SFT checkpoint
+  on the standard dev 40.
+- **Kill criteria (pre-committed):** P10-A manipulation check floor/ceiling
+  in both extreme cells → one redesign, then kill characterization and
+  write up. P10-C: ≤2 data recipes total; invocation ≥50% but need-task
+  solve delta ≤0 → "capability without cash-out" is the finding (publishable,
+  stop); invocation <20% after 2 recipes → negative result, stop.
+- **Budget ceiling: ≤$60** of the ~$85 remaining under the $150 cap;
+  per-phase caps in §P10 phases.
+
+### Superseded north star (pre-2026-07-11, closed at operator pivot)
+
+Route a defined class of coding tasks to self-hosted Ornith-35B inside
+Claude Code where the improved system (scaffold and/or weights) beats stock
+Ornith + Claude Code by ≥+5 paired tasks on dev, confirmed on holdout.
+**Closing state (2026-07-11):** dev-side battery COMPLETE — final ladder
+stock·CC·single 20/40 → native·single 25/40 → native·wrapped 27/40 =
+stock·CC·wrapped 27/40 → tuned·CC·wrapped 28/40 (runs cited in FINDINGS);
+drift audit passed; mechanism identified (wrapper = restoration of the
+trained two-stage geometry: +7 inside CC, +2 native). The **holdout
+confirmation was staged but never run** — no G4/G6 holdout claim is made;
+the battery remains runnable if the operator ever stages
+`tasks/holdout/` + creates `.holdout-unlocked`. Cost-per-solved-task
+observability and the hosted-baseline removal (2026-07-09) carry over
+unchanged.
 
 ## Goals & gates
 
@@ -120,6 +161,38 @@ the harness so it cannot be run by accident. The v001 Ornith baseline (run
 against. (The earlier 2026-07-08 decision had merely deferred the hosted
 columns to pre-G6; this replaces it.)
 
+## P10 phases (2026-07-11; model assignments per standing workflow — Fable orchestrates only)
+
+Structural invariant unchanged: probe workspaces and their skills dirs are
+DATA (generated under `experiments/probes/`), never this repo's own
+`.claude/`. The standard dev 40 stays untouched except as the P10-C
+no-regression gate.
+
+- **P10.1 (SONNET research + OPUS review; $0 GPU).** Progressive-disclosure
+  mechanism notes (what the harness injects per skill and when the full
+  SKILL.md loads), probe-grid pre-registration: factors × levels, N per
+  cell, invocation detector spec (Skill-tool call in the transcript), and
+  the two extreme manipulation-check cells.
+- **P10.2 (OPUS build; ≤$1).** Probe harness: generates isolated probe
+  workspaces (task prompt + skills dir per grid cell), runs headless
+  worker sessions, detects invocation from transcripts. Manipulation check
+  on the 2 extreme cells → gate before any full grid.
+- **P10.3 (SONNET eval-runner; ≤$10 API).** Reference characterization grid
+  on Claude-family subjects. **Operator dependencies:** (a) an auth path for
+  reference-model sessions (Anthropic API key as a Modal secret, or
+  sanctioned local CLI use — the hosted-worker deletion of 2026-07-09 was
+  about eval BASELINES, and small Claude models here are probe SUBJECTS,
+  a different role; operator may veto); (b) confirm subject list.
+- **P10.4 (SONNET; ≤$5 GPU).** Ornith gap battery: same grid via serve().
+- **P10.5 (OPUS corpus + SONNET generator; $0 GPU).** ~30 need-engineered
+  tasks (the skill carries load-bearing info absent from the task text;
+  VERIFY requires it) with held-out split, plus the synthetic
+  consult-then-act trace generator (Ornith session format). Admission
+  checks follow the corpus-curator discipline.
+- **P10.6 (Fable gates; ≤$30 GPU).** SFT via the existing train pipeline,
+  ≤2 data recipes, gated per the north star. HAIKU babysits training jobs
+  (unchanged role).
+
 ## Decision rules (pre-committed — surface, don't re-litigate)
 
 - **Minimum detectable difference:** at this corpus size (~40 tasks × 5
@@ -131,9 +204,11 @@ columns to pre-G6; this replaces it.)
   scaffold+LoRA alternation cycle the improved system does not beat stock
   Ornith + Claude Code by ≥+5 paired tasks on dev (confirmed on holdout once
   staged), the project ships as a negative result + write-up. No extension
-  without new outside evidence. *Status: AT TRIGGER — the cycle is complete
-  with no kept variant; the $10 best-of-k precondition test (fork memo,
-  FINDINGS 2026-07-09) is the sanctioned evidence probe.*
+  without new outside evidence. *Status: RETIRED with the old north star at
+  the 2026-07-11 pivot — the dev-side gate was MET (+8, run
+  20260710T154237) but holdout confirmation was never run; P10's kill
+  criteria (see north star) govern from here. The generic rules in this
+  section (MDD, contamination tripwire, error≠fail) carry over to P10.*
 - **Contamination tripwire:** improvement on public-pretrained tasks that
   isn't mirrored on own-repo tasks is treated as contamination, not
   progress.
